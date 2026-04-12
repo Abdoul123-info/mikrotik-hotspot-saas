@@ -75,9 +75,12 @@ async function getConnection(ip, username, password, port) {
     try {
         if (connectionPool.has(key)) {
             const existing = connectionPool.get(key);
-            // Check if connection is alive using status or a simple ping logic effectively
-            // node-routeros version 1.6.8 uses 'connected' property internally
             if (existing.connected) return existing;
+            
+            // If it failed very recently (last 10s), don't even try - fail fast
+            if (existing.lastError && Date.now() - existing.lastError < 10000) {
+                throw new Error('Connexion impossible (réessayez dans 10s)');
+            }
             console.log(`🔄 Reconnectant vers ${key}...`);
         }
 
@@ -86,7 +89,7 @@ async function getConnection(ip, username, password, port) {
             user: username,
             password: password || '',
             port: parseInt(port) || 8728,
-            timeout: 180, // Extended timeout for huge script lists
+            timeout: 10, // Fail fast (10s) to avoid UI hanging
             tls: port === '8729' ? { rejectUnauthorized: false } : false
         });
 
@@ -108,6 +111,8 @@ async function getConnection(ip, username, password, port) {
         console.log(`🔌 Connexion établie et persistante : ${key}`);
         return conn;
     } catch (err) {
+        const key = `${username}@${ip}:${port}`;
+        connectionPool.set(key, { connected: false, lastError: Date.now() });
         console.error(`❌ Échec de la connexion pour ${key}:`, err.message);
         throw err; // Re-throw to be caught by the route handler
     }
