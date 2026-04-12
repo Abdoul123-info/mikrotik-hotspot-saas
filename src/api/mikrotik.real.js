@@ -11,7 +11,7 @@ const callRouter = async (router, endpoint, method = 'GET', data = null, dateFil
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      'X-API-Key': import.meta.env.VITE_API_SECRET // 🔒 Secure authentication with proxy
+      'X-API-Key': import.meta.env.VITE_API_SECRET || '15f707c1a3ad318c6b01e7e10695bf46d461929dbdeb53cefc8cc6673c39f1f5'
     },
     body: JSON.stringify({
       ip: router.ip,

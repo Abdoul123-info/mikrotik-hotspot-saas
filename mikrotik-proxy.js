@@ -153,9 +153,9 @@ app.get('/health', (req, res) => res.send('OK'));
 // Authentication Middleware for API security
 const authenticate = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
-  const secret = process.env.API_SECRET;
+  const secret = process.env.API_SECRET || '15f707c1a3ad318c6b01e7e10695bf46d461929dbdeb53cefc8cc6673c39f1f5';
   
-  // Skip auth for static files or if no secret is configured (local devs)
+  // Skip auth only if no secret is configured at all
   if (!secret) return next();
   
   if (apiKey === secret) {
