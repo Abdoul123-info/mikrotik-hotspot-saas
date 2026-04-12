@@ -46,14 +46,15 @@ const responseCache = new Map();
 // CACHE SYSTEM for heavy requests
 const DEFAULT_CACHE_TTL = 30000; // 30 seconds default
 const ENDPOINT_TTLS = {
-  '/system/script': 600000, // 10 minutes (historical data)
-  '/ip/hotspot/user': 15000, // 15 seconds (management)
-  '/ip/hotspot/active': 5000, // 5 seconds (live monitoring)
-  '/system/resource': 5000,   // 5 seconds (performance)
+  '/system/script': 60000,     // ⚡ 60s (Heavy Mikhmon parsing)
+  '/ip/hotspot/user': 30000,   // ⚡ 30s (Voucher list)
+  '/ip/hotspot/active': 10000,  // ⚡ 10s (Live monitoring)
+  '/system/resource': 10000,    // ⚡ 10s (Performance)
+  '/interface/monitor-traffic': 2000, // 2s (Live graph)
 };
 
-function getCacheKey(ip, endpoint, cmd, params) {
-  return `${ip}:${endpoint}:${cmd}:${JSON.stringify(params)}`;
+function getCacheKey(ip, endpoint, cmd, params, dateFilter) {
+  return `${ip}:${endpoint}:${cmd}:${JSON.stringify(params)}:${dateFilter || 'none'}`;
 }
 
 // PREVENT CRASHES: Global handlers for unexpected async errors
@@ -196,11 +197,11 @@ app.post('/api/mikrotik', authenticate, async (req, res) => {
       finalParams.push(`=.proplist=${proplist}`);
     }
 
-    // CACHE LOOKUP — covers GET AND POST print (e.g. /system/script with filters)
-    const isReadOperation = method === 'GET' || !method || cmd.endsWith('/print') || (method === 'POST' && endpoint.includes('print'));
-    const cacheKey = getCacheKey(ip, endpoint, cmd, finalParams);
+    // CACHE LOOKUP — Robust detection of read operations
+    const isReadOperation = method === 'GET' || !method || cmd.endsWith('/print') || (method === 'POST' && (endpoint.includes('print') || !['SET','PUT','PATCH','DELETE'].includes(method)));
+    const cacheKey = getCacheKey(ip, endpoint, cmd, finalParams, dateFilter);
     
-    if (responseCache.has(cacheKey)) {
+    if (isReadOperation && responseCache.has(cacheKey)) {
         const cachedEntry = responseCache.get(cacheKey);
         const specificTTL = ENDPOINT_TTLS[endpoint] || DEFAULT_CACHE_TTL;
         
