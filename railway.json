@@ -3,9 +3,10 @@
   "build": {
     "builder": "NIXPACKS",
     "env": {
-      "NIXPACKS_NODE_VERSION": "22"
+      "NIXPACKS_NODE_VERSION": "22",
+      "NIXPACKS_INSTALL_CMD": "npm install --no-audit"
     },
-    "buildCommand": "npm install --no-audit && npm run build"
+    "buildCommand": "npm run build"
   },
   "deploy": {
     "startCommand": "node mikrotik-proxy.js",
