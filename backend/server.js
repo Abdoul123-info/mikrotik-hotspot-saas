@@ -14,7 +14,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // 🔥 MONKEY-PATCH: prevent node-routeros from crashing on "!empty" replies
@@ -290,12 +294,9 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
   }
 });
 
-// Servir les fichiers statiques de React (Frontend)
-app.use(express.static(path.join(__dirname, '../dist')));
-
-// Rediriger toutes les autres requêtes vers index.html pour que React Router fonctionne
-app.use((req, res) => {
-  res.sendFile(path.join(__dirname, '../dist', 'index.html'));
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: '🚀 MikroTik Hotspot SaaS Backend is running!' });
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
