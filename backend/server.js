@@ -8,6 +8,10 @@ import { fileURLToPath } from 'url';
 import { networkInterfaces } from 'os';
 import QRCode from 'qrcode';
 
+// URL publique du backend (ex: https://mon-app.onrender.com)
+// À définir dans .env pour la production
+const BACKEND_URL = process.env.BACKEND_URL || null;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -122,6 +126,75 @@ const endpointToCommand = (endpoint, method, data) => {
   }) : [];
   
   return { cmd, params };
+};
+
+const compileToRouterOsCli = (endpoint, method, data) => {
+  const cleanEndpoint = endpoint.replace(/^\/|\/$/g, '');
+  
+  // 1. Add User / Voucher
+  if (cleanEndpoint === 'ip/hotspot/user' && method === 'PUT') {
+    const name = data.name;
+    const password = data.password || '';
+    const profile = data.profile || 'default';
+    const comment = data.comment || '';
+    return `/ip hotspot user add name="${name}" password="${password}" profile="${profile}" comment="${comment}"`;
+  }
+  
+  // 2. Set/Modify User (e.g. block/unblock)
+  if (cleanEndpoint === 'ip/hotspot/user/set' && method === 'POST') {
+    const id = data['.id'] || data.name;
+    if (!id) return null;
+    const updates = [];
+    if (data.disabled !== undefined) updates.push(`disabled=${data.disabled}`);
+    if (data.profile !== undefined) updates.push(`profile="${data.profile}"`);
+    if (data.comment !== undefined) updates.push(`comment="${data.comment}"`);
+    if (updates.length === 0) return null;
+    return `/ip hotspot user set [find where name="${id}"] ${updates.join(' ')}`;
+  }
+  
+  // 3. Remove User / Profile
+  if ((cleanEndpoint === 'ip/hotspot/user/remove' || cleanEndpoint === 'ip/hotspot/user/profile/remove') && method === 'POST') {
+    const id = data['.id'] || data.name;
+    if (!id) return null;
+    const path = cleanEndpoint.includes('profile') ? '/ip hotspot user profile' : '/ip hotspot user';
+    return `${path} remove [find where name="${id}"]`;
+  }
+  
+  // 4. Remove Active User Session (Disconnect)
+  if (cleanEndpoint === 'ip/hotspot/active/remove' && method === 'POST') {
+    const id = data['.id'];
+    if (!id) return null;
+    return `/ip hotspot active remove [find where user="${id}"]`;
+  }
+
+  // 5. Add Profile
+  if (cleanEndpoint === 'ip/hotspot/user/profile' && method === 'PUT') {
+    const name = data.name;
+    const updates = [`name="${name}"`];
+    if (data['session-timeout'] !== undefined) updates.push(`session-timeout="${data['session-timeout']}"`);
+    if (data['idle-timeout'] !== undefined) updates.push(`idle-timeout="${data['idle-timeout']}"`);
+    if (data['shared-users'] !== undefined) updates.push(`shared-users=${data['shared-users']}`);
+    if (data['rate-limit'] !== undefined) updates.push(`rate-limit="${data['rate-limit']}"`);
+    if (data.comment !== undefined) updates.push(`comment="${data.comment}"`);
+    return `/ip hotspot user profile add ${updates.join(' ')}`;
+  }
+
+  // 6. Set Profile
+  if (cleanEndpoint === 'ip/hotspot/user/profile/set' && method === 'POST') {
+    const id = data['.id'] || data.name;
+    if (!id) return null;
+    const updates = [];
+    if (data.name !== undefined) updates.push(`name="${data.name}"`);
+    if (data['session-timeout'] !== undefined) updates.push(`session-timeout="${data['session-timeout']}"`);
+    if (data['idle-timeout'] !== undefined) updates.push(`idle-timeout="${data['idle-timeout']}"`);
+    if (data['shared-users'] !== undefined) updates.push(`shared-users=${data['shared-users']}`);
+    if (data['rate-limit'] !== undefined) updates.push(`rate-limit="${data['rate-limit']}"`);
+    if (data.comment !== undefined) updates.push(`comment="${data.comment}"`);
+    if (updates.length === 0) return null;
+    return `/ip hotspot user profile set [find where name="${id}"] ${updates.join(' ')}`;
+  }
+
+  return null;
 };
 
 // Get server network IP and QR code for mobile login access
@@ -277,10 +350,58 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
     res.status(200).json(output);
 
   } catch (error) {
+    // 🔄 FALLBACK: Si connexion directe échoue, vérifier le cache agent Firestore ou mettre en file d'attente
+    if (error.message && (error.message.includes('TIMEOUT') || error.message.includes('ETIMEDOUT') || error.message.includes('ECONNREFUSED') || error.message.includes('Lockout'))) {
+      try {
+        const freshDoc = await adminDb.collection('routers').doc(routerId).get();
+        const routerData = freshDoc.data() || {};
+        
+        // Si c'est une opération d'écriture et que le routeur utilise l'Agent Push
+        if (!isReadOperation && routerData.agentKey) {
+          console.log(`📥 [QUEUING] Mise en file d'attente de la commande ${method} ${endpoint} pour le routeur ${routerId}`);
+          await adminDb.collection('routers').doc(routerId).collection('commands').add({
+            endpoint,
+            method,
+            data: cleanData || {},
+            status: 'pending',
+            createdAt: new Date().toISOString()
+          });
+          return res.status(200).json({
+            success: true,
+            queued: true,
+            message: "Le routeur est actuellement injoignable (NAT/CGNAT/Hors-ligne). La commande a été mise en file d'attente et sera exécutée dès que le routeur se synchronisera (environ 1 min)."
+          });
+        }
+
+        const agentData = routerData.agentData;
+        if (agentData?.lastSync) {
+          const syncAge = Date.now() - new Date(agentData.lastSync).getTime();
+          if (syncAge < 300000) { // Cache valide jusqu'à 5 minutes
+            let cachedResult;
+            if (endpoint.includes('/active')) {
+              // Populer le champ .id avec le nom d'utilisateur pour pouvoir déconnecter plus tard via CLI
+              cachedResult = (agentData.activeUsers || []).map(u => ({
+                ...u,
+                '.id': u.user
+              }));
+            }
+            else if (endpoint.includes('/resource')) cachedResult = agentData.systemResource || {};
+            
+            if (cachedResult !== undefined) {
+              console.log(`✅ [AGENT CACHE] ${endpoint} depuis cache (${Math.round(syncAge/1000)}s)`);
+              res.setHeader('X-Data-Source', 'agent-cache');
+              res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
+              return res.status(200).json(cachedResult);
+            }
+          }
+        }
+      } catch (cacheErr) { /* ignore */ }
+    }
+
     console.error(`❌ [Erreur RouterOS]`, error);
     let errMsg = 'Erreur inconnue';
     if (error.code === 'ETIMEDOUT' || error.errno === -4039 || (error.message && error.message.includes('ETIMEDOUT'))) {
-      errMsg = "Le routeur est injoignable (Délai d'attente dépassé - ETIMEDOUT).";
+      errMsg = "Le routeur est injoignable (ETIMEDOUT). Si vous êtes en 4G/Starlink, activez le script Agent sur votre MikroTik.";
     } else if (error.message && error.message !== 'RosException') {
       errMsg = error.message;
     } else if (error.trap) {
@@ -289,8 +410,164 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
 
     res.status(500).json({ 
       error: errMsg,
-      tip: "Vérifiez l'adresse IP, votre connexion VPN, et assurez-vous que le routeur est allumé."
+      tip: "Vérifiez l'adresse IP ou activez le script Agent MikroTik pour les connexions CGNAT."
     });
+  }
+});
+
+// ──────────────────────────────────────────────
+// 🤖 Push Agent API (MikroTik → Render → Firestore)
+// ──────────────────────────────────────────────
+
+// Obtenir/générer la clé agent d'un routeur
+app.get('/api/agent/key/:routerId', requireAuth, async (req, res) => {
+  const { routerId } = req.params;
+  try {
+    const routerDoc = await adminDb.collection('routers').doc(routerId).get();
+    if (!routerDoc.exists) return res.status(404).json({ error: 'Routeur introuvable.' });
+    const router = routerDoc.data();
+    if (router.ownerId !== req.user.userId) return res.status(403).json({ error: 'Accès refusé.' });
+
+    let agentKey = router.agentKey;
+    if (!agentKey) {
+      agentKey = [...Array(40)].map(() => Math.random().toString(36)[2]).join('');
+      await adminDb.collection('routers').doc(routerId).update({ agentKey });
+    }
+    res.json({ agentKey, routerId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint pour retourner les commandes en attente sous forme de script RouterOS (.rsc)
+app.get('/api/agent/pending-script/:routerId', async (req, res) => {
+  const { routerId } = req.params;
+  const { key } = req.query;
+
+  if (!routerId || !key) {
+    return res.status(400).type('text/plain').send('# error: routerId et key requis\n');
+  }
+
+  try {
+    const routerDoc = await adminDb.collection('routers').doc(routerId).get();
+    if (!routerDoc.exists) {
+      return res.status(404).type('text/plain').send('# error: routeur introuvable\n');
+    }
+    
+    const router = routerDoc.data();
+    if (router.agentKey !== key) {
+      return res.status(403).type('text/plain').send('# error: cle invalide\n');
+    }
+
+    // Récupérer les commandes en attente
+    const commandsSnap = await adminDb.collection('routers').doc(routerId)
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'asc')
+      .limit(10)
+      .get();
+
+    if (commandsSnap.empty) {
+      return res.type('text/plain').send('# pas de commandes en attente\n');
+    }
+
+    let scriptContent = '# commandes en attente\n\n';
+
+    // Déterminer l'URL de base pour le callback
+    const nets = networkInterfaces();
+    let localIp = '127.0.0.1';
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          localIp = net.address;
+          break;
+        }
+      }
+      if (localIp !== '127.0.0.1') break;
+    }
+    
+    // Utiliser BACKEND_URL si défini (prod), sinon l'IP locale (réseau local)
+    const callbackHost = BACKEND_URL || `http://${localIp}:${PORT}`;
+
+    for (const doc of commandsSnap.docs) {
+      const cmdData = doc.data();
+      const commandId = doc.id;
+      
+      const cliCommand = compileToRouterOsCli(cmdData.endpoint, cmdData.method, cmdData.data);
+      if (cliCommand) {
+        scriptContent += `${cliCommand}\n`;
+        const doneUrl = `${callbackHost}/api/agent/commands/${commandId}/done`;
+        scriptContent += `/tool fetch url="${doneUrl}" http-method=post http-header-field="Content-Type: application/json" http-data="{\\"routerId\\":\\"${routerId}\\",\\"agentKey\\":\\"${key}\\",\\"result\\":\\"ok\\"}" keep-result=no\n\n`;
+      } else {
+        // Commande non supportée, marquée comme sautée
+        await doc.ref.update({
+          status: 'skipped',
+          result: 'unsupported cli conversion',
+          executedAt: new Date().toISOString()
+        });
+      }
+    }
+
+    res.type('text/plain').send(scriptContent);
+  } catch (err) {
+    console.error('Erreur pending script:', err);
+    res.status(500).type('text/plain').send(`# error: ${err.message}\n`);
+  }
+});
+
+// Réception des données poussées par MikroTik
+app.post('/api/agent/push', async (req, res) => {
+  const { routerId, agentKey, activeUsers, resource } = req.body;
+  if (!routerId || !agentKey) return res.status(400).json({ error: 'routerId et agentKey requis.' });
+
+  try {
+    const routerDoc = await adminDb.collection('routers').doc(routerId).get();
+    if (!routerDoc.exists) return res.status(404).json({ error: 'Routeur introuvable.' });
+    const router = routerDoc.data();
+    if (router.agentKey !== agentKey) return res.status(403).json({ error: 'Clé agent invalide.' });
+
+    await adminDb.collection('routers').doc(routerId).update({
+      'agentData.activeUsers': activeUsers || [],
+      'agentData.systemResource': resource || {},
+      'agentData.lastSync': new Date().toISOString(),
+    });
+
+    // Invalider le cache mémoire
+    for (const [key] of responseCache) {
+      if (key.startsWith(router.ip + ':')) responseCache.delete(key);
+    }
+
+    // Retourner les commandes en attente
+    const commandsSnap = await adminDb.collection('routers').doc(routerId)
+      .collection('commands')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'asc')
+      .limit(5)
+      .get();
+
+    const commands = commandsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    console.log(`📥 [AGENT] ${routerId} → ${(activeUsers || []).length} actifs`);
+    res.json({ success: true, commands });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// MikroTik marque une commande comme exécutée
+app.post('/api/agent/commands/:commandId/done', async (req, res) => {
+  const { commandId } = req.params;
+  const { routerId, agentKey, result } = req.body;
+  if (!routerId || !agentKey) return res.status(400).json({ error: 'requis.' });
+  try {
+    const routerDoc = await adminDb.collection('routers').doc(routerId).get();
+    if (!routerDoc.exists) return res.status(404).json({ error: 'Routeur introuvable.' });
+    if (routerDoc.data().agentKey !== agentKey) return res.status(403).json({ error: 'Clé invalide.' });
+    await adminDb.collection('routers').doc(routerId).collection('commands').doc(commandId).update({
+      status: 'done', result: result || 'ok', executedAt: new Date().toISOString()
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -301,6 +578,7 @@ app.get('/', (req, res) => {
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Backend SaaS MikroTik + Firebase (Port ${PORT})`);
+  console.log(`   → Agent Push: POST /api/agent/push`);
   console.log(`   → Prêt pour accepter des connexions\n`);
 });
 

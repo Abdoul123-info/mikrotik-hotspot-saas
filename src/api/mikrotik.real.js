@@ -144,41 +144,127 @@ export const getVoucherProfiles = async (router) => {
   }
 };
 
-export const generateVouchers = async (router, profile, qty) => {
+// ────────────────────────────────────────────────────────────────────
+// Helper : génère un code aléatoire selon le jeu de caractères choisi
+// ────────────────────────────────────────────────────────────────────
+const CHAR_SETS = {
+  mixed:     'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789',
+  uppercase: 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
+  lowercase: 'abcdefghjkmnpqrstuvwxyz23456789',
+  numeric:   '0123456789',
+};
+
+function generateCode(length = 6, charSet = 'mixed', prefix = '') {
+  const chars = CHAR_SETS[charSet] || CHAR_SETS.mixed;
+  let code = prefix;
+  for (let i = 0; i < length; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Génération de vouchers style Mikhmon avec options avancées
+// options: { qty, userMode, length, prefix, characterSet,
+//            timeLimit, dataLimit, logSales, mikhmonCompat }
+// ────────────────────────────────────────────────────────────────────
+export const generateVouchers = async (router, profile, qty, options = {}) => {
+  const {
+    userMode      = 'up',      // 'up' = user+pass distincts | 'u=p' = user==pass
+    length        = 6,
+    prefix        = '',
+    characterSet  = 'mixed',
+    timeLimit: timeLimitOpt,
+    dataLimit: dataLimitOpt,
+    logSales      = true,
+    mikhmonCompat = true,
+  } = options;
+
+  const numQty  = parseInt(qty) || 1;
+  const now     = new Date();
+  const nowISO  = now.toISOString();
+  const dateStr = now.toLocaleDateString('fr-FR'); // "06/06/2026"
+
+  // Format date Mikhmon : YYYY-MM-DD
+  const mikhmonDate = now.toISOString().split('T')[0];
+
   const vouchers = [];
-  const now = new Date().toISOString();
-  const numQty = parseInt(qty) || 1;
+  const usedCodes = new Set(); // évite les doublons dans le même batch
 
   for (let i = 0; i < numQty; i++) {
-    const user = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const pass = Math.floor(1000 + Math.random() * 9000).toString();
+    // Générer username unique
+    let username;
+    let attempts = 0;
+    do {
+      username = generateCode(length, characterSet, prefix);
+      attempts++;
+    } while (usedCodes.has(username) && attempts < 50);
+    usedCodes.add(username);
+
+    // Password : user=pass ou password distinct (numérique 4 chiffres par défaut)
+    const password = userMode === 'u=p'
+      ? username
+      : generateCode(4, 'numeric', '');
+
+    // Durée / données (override possible par l'utilisateur)
+    const finalTimeLimit = timeLimitOpt || profile.timeLimit || '';
+    const finalDataLimit = dataLimitOpt || '';
+
+    // Commentaire style Mikhmon (compatible avec la page Ventes)
+    // Format Mikhmon v4: "YYYY-MM-DD-|-HH:MM-|-user-|-price-|-ip-|-mac-|-validity-|-profile"
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const mikhmonComment = mikhmonCompat
+      ? `${mikhmonDate}-|-${hh}:${mm}-|-${username}-|-${profile.price || 0}-|-App-|-${i+1}-|-${finalTimeLimit || 'Illimité'}-|-${profile.name}`
+      : `App ${dateStr}`;
 
     try {
-      await callRouter(router, '/ip/hotspot/user', 'PUT', {
-        name: user,
-        password: pass,
-        profile: profile.name,
-        comment: `App ${new Date().toLocaleDateString('fr-FR')}`
-      });
+      // Paramètres pour l'API MikroTik
+      const apiData = {
+        name:     username,
+        password: password,
+        profile:  profile.name,
+        comment:  mikhmonComment,
+      };
+      if (finalTimeLimit) apiData['limit-uptime'] = finalTimeLimit;
+      if (finalDataLimit) apiData['limit-bytes-total'] =
+        String(parseInt(finalDataLimit) * 1024 * 1024); // MB → bytes
+
+      await callRouter(router, '/ip/hotspot/user', 'PUT', apiData);
+
+      // Log de vente dans /system/script (compatible Mikhmon)
+      if (logSales && mikhmonCompat) {
+        const salesScriptName = `${mikhmonDate}-|-${hh}:${mm}-|-${username}-|-${profile.price || 0}-|-App-|-${i+1}-|-${finalTimeLimit || profile.timeLimit || 'Illimité'}-|-${profile.name}`;
+        try {
+          await callRouter(router, '/system/script', 'PUT', {
+            name:    salesScriptName,
+            source:  mikhmonDate,
+            comment: 'mikhmon',
+          });
+        } catch (_) { /* log optionnel, on ignore les erreurs */ }
+      }
 
       vouchers.push({
-        id: `${Date.now()}-${i}`,
-        username: user,
-        password: pass,
-        profileId: profile.id,
+        id:          `${Date.now()}-${i}`,
+        username,
+        password,
+        profileId:   profile.id,
         profileName: profile.name,
-        timeLimit: profile.timeLimit,
-        dataLimit: profile.dataLimit,
-        price: profile.price,
-        createdAt: now,
-        status: 'unused'
+        timeLimit:   finalTimeLimit || profile.timeLimit || 'Illimité',
+        dataLimit:   finalDataLimit
+          ? `${dataLimitOpt} MB`
+          : profile.dataLimit || 'Illimité',
+        price:       profile.price || 0,
+        createdAt:   nowISO,
+        status:      'unused',
+        comment:     mikhmonComment,
       });
     } catch (e) {
       console.error(`Coupon ${i + 1} non créé:`, e.message);
     }
   }
 
-  // Persist to local history (Still used for offline/newly created)
+  // Persistance locale (historique hors-ligne + cache)
   const history = JSON.parse(localStorage.getItem('hspot_history') || '[]');
   localStorage.setItem('hspot_history', JSON.stringify([...vouchers, ...history]));
 

@@ -125,7 +125,8 @@ function CouponsPage() {
           price: selectedProfile.price,
           totalPrice: selectedProfile.price * result.length,
           date: new Date().toLocaleString(),
-          code: Math.floor(Math.random() * 999).toString().padStart(3, '0')
+          code: Math.floor(Math.random() * 999).toString().padStart(3, '0'),
+          vouchers: result
         };
         setLastBatch(batchInfo);
         localStorage.setItem('last_batch_info', JSON.stringify(batchInfo));
@@ -445,19 +446,43 @@ function CouponsPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <button className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                  <button 
+                    onClick={() => navigate('/tickets?print-last-batch=true')}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
                     <Printer size={20} className="text-white/40 group-hover:text-primary" />
                     <span className="text-[9px] font-bold uppercase text-white/30">Imprimer</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                  <button 
+                    onClick={() => navigate('/tickets?print-last-batch=true&style=qr')}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
                     <QrCode size={20} className="text-white/40 group-hover:text-secondary" />
                     <span className="text-[9px] font-bold uppercase text-white/30">QR Codes</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                  <button 
+                    onClick={() => {
+                      if (lastBatch && lastBatch.vouchers) {
+                        const csvContent = "data:text/csv;charset=utf-8,Username,Password,Profile,Price,TimeLimit\n" 
+                          + lastBatch.vouchers.map(v => `${v.username},${v.password},${v.profileName},${v.price},${v.timeLimit}`).join("\n");
+                        const encodedUri = encodeURI(csvContent);
+                        const link = document.createElement("a");
+                        link.setAttribute("href", encodedUri);
+                        link.setAttribute("download", `vouchers_batch_${lastBatch.code}.csv`);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
                     <FileDown size={20} className="text-white/40 group-hover:text-accent" />
-                    <span className="text-[9px] font-bold uppercase text-white/30">Exporter</span>
+                    <span className="text-[9px] font-bold uppercase text-white/30">Exporter CSV</span>
                   </button>
-                  <button className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                  <button 
+                    onClick={() => navigate('/tickets')}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
                     <ChevronRight size={20} className="text-white/40 group-hover:text-white" />
                     <span className="text-[9px] font-bold uppercase text-white/30">Voir Liste</span>
                   </button>

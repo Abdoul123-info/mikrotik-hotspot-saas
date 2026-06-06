@@ -114,12 +114,13 @@
   background: rgba(0, 229, 160, 0.3);
 }
 
-/* Print thermal layout */
+/* Print thermal and grid layout */
 @media print {
   body * {
     visibility: hidden;
   }
-  #thermal-print-container, #thermal-print-container * {
+  #thermal-print-container, #thermal-print-container *,
+  #grid-print-container, #grid-print-container * {
     visibility: visible;
   }
   #thermal-print-container {
@@ -127,6 +128,16 @@
     left: 0;
     top: 0;
     width: 80mm;
+    margin: 0;
+    padding: 0;
+    color: black !important;
+    background: white !important;
+  }
+  #grid-print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
     margin: 0;
     padding: 0;
     color: black !important;
