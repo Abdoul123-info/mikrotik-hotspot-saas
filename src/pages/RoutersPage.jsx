@@ -7,15 +7,21 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
-  Server
+  Server,
+  Pencil,
+  Terminal
 } from 'lucide-react';
 import { connectRouter } from '../api/mikrotik.real';
 import { useRouter } from '../contexts/RouterContext';
 import RouterModal from '../components/routers/RouterModal';
+import TunnelModal from '../components/routers/TunnelModal';
 
 function RoutersPage() {
-  const { routers, activeRouter, addRouter, removeRouter, setActiveRouterId } = useRouter();
+  const { routers, activeRouter, addRouter, updateRouter, removeRouter, setActiveRouterId } = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTunnelModalOpen, setIsTunnelModalOpen] = useState(false);
+  const [editingRouter, setEditingRouter] = useState(null);
+  const [tunnelRouter, setTunnelRouter] = useState(null);
   const [testingId, setTestingId] = useState(null);
   const [testResults, setTestResults] = useState({});
 
@@ -32,7 +38,7 @@ function RoutersPage() {
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-heading font-extrabold text-white">Mes Routeurs</h1>
-          <p className="text-white/40 font-body">Gérez vos équipements MikroTik et vérifiez leur connexion à l'API REST.</p>
+          <p className="text-white/40 font-body">Gérez vos équipements MikroTik et configurez les accès distants.</p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
@@ -65,8 +71,8 @@ function RoutersPage() {
                   <th className="px-6 py-4">Routeur</th>
                   <th className="px-6 py-4">Adresse IP</th>
                   <th className="px-6 py-4">Port</th>
-                  <th className="px-6 py-4">Login</th>
-                  <th className="px-6 py-4">Connexion</th>
+                  <th className="px-6 py-4">Tunnel</th>
+                  <th className="px-6 py-4">Statut</th>
                   <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
               </thead>
@@ -98,18 +104,28 @@ function RoutersPage() {
                         <span className="font-mono text-sm text-white/50">{router.port}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-sm text-white/50">{router.login}</span>
+                         <button 
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             setTunnelRouter(router);
+                             setIsTunnelModalOpen(true);
+                           }}
+                           className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-all"
+                         >
+                           <Terminal size={12} />
+                           <span className="text-[10px] font-bold uppercase tracking-wider">Script</span>
+                         </button>
                       </td>
                       <td className="px-6 py-4">
                         {testResult === null ? (
-                          <span className="text-[10px] text-white/30 italic">En cours...</span>
+                          <span className="text-[10px] text-white/30 italic animate-pulse text-center block w-full">Vérification...</span>
                         ) : testResult?.success ? (
                           <div className="flex items-center gap-1.5 text-primary text-xs font-bold">
-                            <CheckCircle2 size={14} /> {testResult.latencyMs}ms
+                            <CheckCircle2 size={14} /> Connecté
                           </div>
                         ) : testResult?.success === false ? (
                           <div className="flex items-center gap-1.5 text-red-400 text-xs font-bold">
-                            <AlertCircle size={14} /> Échec
+                            <AlertCircle size={14} /> Déconnecté
                           </div>
                         ) : (
                           <span className="text-[10px] text-white/20 italic">Non testé</span>
@@ -121,7 +137,7 @@ function RoutersPage() {
                             onClick={() => handleTestConnection(router)}
                             disabled={testingId === router.id}
                             className="p-2 rounded-lg border border-white/10 hover:bg-secondary/10 hover:border-secondary/40 transition-all text-secondary disabled:opacity-40"
-                            title="Tester la connexion REST API"
+                            title="Tester la connexion"
                           >
                             {testingId === router.id 
                               ? <RefreshCw className="animate-spin" size={16} /> 
@@ -129,9 +145,19 @@ function RoutersPage() {
                             }
                           </button>
                           <button 
+                             onClick={() => {
+                               setEditingRouter(router);
+                               setIsModalOpen(true);
+                             }}
+                             className="p-2 rounded-lg border border-white/10 hover:bg-primary/20 hover:border-primary/40 transition-all text-primary"
+                             title="Modifier"
+                           >
+                             <Pencil size={16} />
+                           </button>
+                          <button 
                             onClick={() => removeRouter(router.id)}
                             className="p-2 rounded-lg border border-white/10 hover:bg-red-500/10 hover:border-red-500/40 transition-all text-red-500/40 hover:text-red-400"
-                            title="Supprimer ce routeur"
+                            title="Supprimer"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -156,7 +182,7 @@ function RoutersPage() {
             <div>
               <p className="text-sm font-bold text-red-400">Connexion échouée — {router?.name}</p>
               <p className="text-xs text-white/40 mt-1">{result.error}</p>
-              <p className="text-xs text-white/30 mt-2 italic">Vérifiez que le service API (/ip service api) est activé sur votre routeur et que le port est correct (par défaut 8728).</p>
+              <p className="text-xs text-white/30 mt-2 italic text-balance">Vérifiez que le service API (/ip service api) est activé sur votre routeur ou que votre tunnel VPN est bien connecté.</p>
             </div>
           </div>
         );
@@ -164,8 +190,24 @@ function RoutersPage() {
 
       <RouterModal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSave={addRouter}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingRouter(null);
+        }} 
+        onSave={(data) => {
+          if (editingRouter) {
+            updateRouter(editingRouter.id, data);
+          } else {
+            addRouter(data);
+          }
+        }}
+        initialData={editingRouter}
+      />
+
+      <TunnelModal
+        isOpen={isTunnelModalOpen}
+        onClose={() => setIsTunnelModalOpen(false)}
+        router={tunnelRouter}
       />
     </div>
   );

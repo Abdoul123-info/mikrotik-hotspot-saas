@@ -1,15 +1,17 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Router, Ticket, Tag, Activity, BarChart3, Settings, Users, LineChart } from 'lucide-react';
+import { LayoutDashboard, Router, Ticket, Tag, Activity, BarChart3, Settings, Users, LineChart, Radio, Zap } from 'lucide-react';
 import { useSettings } from '../../contexts/SettingsContext';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/active', icon: Users, label: 'Actifs' },
+  { path: '/leases', icon: Radio, label: 'Appareils' },
   { path: '/routers', icon: Router, label: 'Routeurs' },
+  { path: '/profiles', icon: Zap, label: 'Profils' },
   { path: '/coupons', icon: Tag, label: 'Coupons' },
   { path: '/tickets', icon: Ticket, label: 'Tickets' },
   { path: '/monitoring', icon: Activity, label: 'Suivi' },
-  { path: '/active', icon: Users, label: 'Actifs' },
   { path: '/sales', icon: BarChart3, label: 'Ventes' },
   { path: '/analytics', icon: LineChart, label: 'Analytics' },
   { path: '/settings', icon: Settings, label: 'Réglages' },

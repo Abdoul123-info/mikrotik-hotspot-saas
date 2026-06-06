@@ -224,7 +224,7 @@ function AnalyticsPage() {
             <h3 className="font-heading font-bold text-white mb-1">Revenus — 12 derniers mois</h3>
             <p className="text-xs text-white/30 mb-6">Tendance de vos revenus sur l'année écoulée</p>
             <div style={{ height: 260, minHeight: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={last12Months}>
                   <defs>
                     <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -247,7 +247,7 @@ function AnalyticsPage() {
             <h3 className="font-heading font-bold text-white mb-1">Ventes par jour — {MONTHS_FR[thisMonth]}</h3>
             <p className="text-xs text-white/30 mb-6">Chaque barre représente les revenus d'une journée</p>
             <div style={{ height: 220, minHeight: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={dailyData} barSize={14}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9 }} axisLine={false} tickLine={false} />
@@ -275,7 +275,7 @@ function AnalyticsPage() {
               <p className="text-xs text-white/30 mb-4">Part de chaque forfait dans les revenus du mois</p>
               {profileData.length > 0 ? (
                 <div style={{ height: 260, minHeight: 260 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie data={profileData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value">
                         {profileData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
@@ -335,7 +335,7 @@ function AnalyticsPage() {
               Meilleur jour : <span className="text-primary font-bold">{bestDay?.label}</span> — {formatCurrency(bestDay?.Revenus || 0, settings)} en moyenne
             </p>
             <div style={{ height: 220, minHeight: 220 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={weekdayData} barSize={32}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 12 }} axisLine={false} tickLine={false} />

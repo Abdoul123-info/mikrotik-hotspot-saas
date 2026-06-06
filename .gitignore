@@ -31,6 +31,8 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+serviceAccountKey.json
+*serviceAccount*.json
 
 # PM2
 .pm2/
@@ -44,3 +46,7 @@ ecosystem.config.cjs
 coverage/
 *.lcov
 build/
+build_v2/
+build_out/
+release/
+scratch/

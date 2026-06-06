@@ -1,9 +1,9 @@
 import React from 'react';
-import { Share2, Printer, Copy, Check, QrCode } from 'lucide-react';
+import { Share2, Printer, Copy, Check, QrCode, ShieldOff, ShieldCheck } from 'lucide-react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { formatCurrency } from '../../utils/currency';
 
-function VoucherCard({ voucher, onPrint, onShare }) {
+function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
   const { settings } = useSettings();
   const [copied, setCopied] = React.useState(false);
 
@@ -14,12 +14,23 @@ function VoucherCard({ voucher, onPrint, onShare }) {
   };
 
   return (
-    <div className={`glass-card p-5 relative group overflow-hidden border-primary/10 hover:border-primary/30 transition-all ${voucher.status === 'used' ? 'opacity-50 grayscale' : ''}`}>
+    <div className={`glass-card p-5 relative group overflow-hidden transition-all 
+      ${voucher.status === 'used' ? 'opacity-50 grayscale' : ''} 
+      ${voucher.disabled ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-primary/10 hover:border-primary/30'}
+    `}>
       {/* Online Badge */}
       {voucher.status === 'online' && (
         <div className="absolute top-3 right-3 px-2 py-0.5 bg-primary/20 border border-primary/30 rounded-full flex items-center gap-1 text-[8px] font-black uppercase text-primary animate-pulse z-10">
           <div className="w-1.5 h-1.5 rounded-full bg-primary" />
           En Ligne
+        </div>
+      )}
+
+      {/* Blocked Badge */}
+      {voucher.disabled && (
+        <div className="absolute top-3 right-3 px-2 py-0.5 bg-red-500/20 border border-red-500/30 rounded-full flex items-center gap-1 text-[8px] font-black uppercase text-red-500 z-10">
+          <ShieldOff size={8} />
+          Bloqué
         </div>
       )}
 
@@ -102,6 +113,15 @@ function VoucherCard({ voucher, onPrint, onShare }) {
         >
           <Share2 size={16} />
         </button>
+        {voucher.disabled && (
+          <button 
+            onClick={() => onUnblock(voucher)}
+            className="flex-1 h-10 flex items-center justify-center rounded-lg bg-green-500/20 border border-green-500/20 hover:bg-green-500/40 transition-all text-green-400"
+            title="Débloquer le ticket"
+          >
+            <ShieldCheck size={18} />
+          </button>
+        )}
       </div>
 
       {voucher.status === 'used' && (

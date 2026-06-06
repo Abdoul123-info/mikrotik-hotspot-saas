@@ -8,12 +8,14 @@ import {
   Ticket,
   ChevronLeft,
   RefreshCw,
-  Layers
+  Layers,
+  ShieldOff,
+  ShieldCheck
 } from 'lucide-react';
 import VoucherCard from '../components/coupons/VoucherCard';
 import { useSettings } from '../contexts/SettingsContext';
 import { useRouter } from '../contexts/RouterContext';
-import { getHotspotUsers } from '../api/mikrotik.real';
+import { getHotspotUsers, blockHotspotUser } from '../api/mikrotik.real';
 import { formatCurrency } from '../utils/currency';
 
 function TicketsPage() {
@@ -39,12 +41,32 @@ function TicketsPage() {
     try {
       const realUsers = await getHotspotUsers(activeRouter);
       const history = JSON.parse(localStorage.getItem('hspot_history') || '[]');
+      
       const merged = new Map();
+      
+      // 1. First add history (contains valid createdAt dates)
       history.forEach(v => merged.set(v.username, v));
-      realUsers.forEach(v => merged.set(v.username, v));
-      setVouchers(Array.from(merged.values()).sort((a, b) =>
-        new Date(b.createdAt) - new Date(a.createdAt)
-      ));
+      
+      // 2. Then merge with real users from router
+      realUsers.forEach(v => {
+        const existing = merged.get(v.username);
+        if (existing) {
+          // Keep the ISO date from history if it exists
+          merged.set(v.username, { ...existing, ...v, createdAt: existing.createdAt });
+        } else {
+          merged.set(v.username, v);
+        }
+      });
+
+      const sorted = Array.from(merged.values()).sort((a, b) => {
+        const dateA = new Date(a.createdAt);
+        const dateB = new Date(b.createdAt);
+        const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
+        const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
+        return timeB - timeA;
+      });
+
+      setVouchers(sorted);
     } catch (err) {
       console.error('Failed to load tickets:', err);
       setError(err.message);
@@ -61,6 +83,25 @@ function TicketsPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  const handleUnblock = async (voucher) => {
+    if (!activeRouter) return;
+    setIsLoading(true);
+    try {
+      const res = await blockHotspotUser(activeRouter, voucher.username, false);
+      if (res.success) {
+        setVouchers(prev => prev.map(v => 
+          v.username === voucher.username ? { ...v, disabled: false } : v
+        ));
+      } else {
+        alert('Erreur: ' + res.error);
+      }
+    } catch (err) {
+      console.error('Failed to unblock:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Build unique profile list with counts (sorted by count descending)
   const profileCounts = vouchers.reduce((acc, v) => {
     const p = v.profileName || v.profileId || 'Inconnu';
@@ -73,12 +114,18 @@ function TicketsPage() {
   const filteredVouchers = vouchers.filter(v => {
     const vProfile = v.profileName || v.profileId || 'Inconnu';
     const matchesProfile = profileTab === 'all' || vProfile === profileTab;
-    const matchesStatus = filter === 'all' || v.status === filter;
+    const matchesStatus = filter === 'all' 
+      ? true 
+      : filter === 'blocked' 
+        ? v.disabled === true
+        : v.status === filter;
     const q = search.toLowerCase();
     const matchesSearch = !q ||
       (v.username || '').toLowerCase().includes(q) ||
       (v.profileName || v.profileId || '').toLowerCase().includes(q) ||
-      (v.comment || '').toLowerCase().includes(q);
+      (v.comment || '').toLowerCase().includes(q) ||
+      (v.macAddress || '').toLowerCase().includes(q) ||
+      (v.address || '').toLowerCase().includes(q);
     return matchesProfile && matchesStatus && matchesSearch;
   });
 
@@ -213,6 +260,7 @@ function TicketsPage() {
               { id: 'all', label: 'Tous', icon: Ticket },
               { id: 'unused', label: 'Disponibles', icon: CheckCircle2 },
               { id: 'used', label: 'Utilisés', icon: Clock },
+              { id: 'blocked', label: 'Bloqués', icon: ShieldOff },
             ].map(f => (
               <button
                 key={f.id}
@@ -255,7 +303,13 @@ function TicketsPage() {
           </div>
         ) : (
           (isFiltering ? filteredVouchers : filteredVouchers.slice(0, 100)).map(v => (
-            <VoucherCard key={v.id} voucher={v} onPrint={handlePrint} onShare={handleShare} />
+            <VoucherCard 
+              key={v.id} 
+              voucher={v} 
+              onPrint={handlePrint} 
+              onShare={handleShare}
+              onUnblock={handleUnblock}
+            />
           ))
         )}
 

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { X, Wifi, Shield, Globe, Terminal, Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Wifi, Shield, Globe, Terminal, Save, Pencil } from 'lucide-react';
 
-function RouterModal({ isOpen, onClose, onSave }) {
+function RouterModal({ isOpen, onClose, onSave, initialData }) {
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -10,10 +10,25 @@ function RouterModal({ isOpen, onClose, onSave }) {
     password: ''
   });
 
+  useEffect(() => {
+    if (isOpen) {
+      if (initialData) {
+        setFormData({
+          name: initialData.name || '',
+          ip: initialData.ip || '',
+          port: initialData.port || '8728',
+          login: initialData.login || 'admin',
+          password: initialData.password || ''
+        });
+      } else {
+        setFormData({ name: '', ip: '', port: '8728', login: 'admin', password: '' });
+      }
+    }
+  }, [isOpen, initialData]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave({ ...formData, port: formData.port.toString() });
-    setFormData({ name: '', ip: '', port: '80', login: 'admin', password: '' });
+    onSave(initialData ? { ...initialData, ...formData } : formData);
     onClose();
   };
 
@@ -27,9 +42,11 @@ function RouterModal({ isOpen, onClose, onSave }) {
         <div className="bg-primary/10 p-6 flex items-center justify-between border-b border-primary/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
-              <Wifi size={20} />
+              {initialData ? <Pencil size={20} /> : <Wifi size={20} />}
             </div>
-            <h3 className="text-xl font-heading font-extrabold lg:text-2xl uppercase">Ajouter un Routeur</h3>
+            <h3 className="text-xl font-heading font-extrabold lg:text-2xl uppercase">
+              {initialData ? 'Modifier le Routeur' : 'Ajouter un Routeur'}
+            </h3>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all">
             <X size={20} />

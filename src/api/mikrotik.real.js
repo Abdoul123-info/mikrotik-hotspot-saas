@@ -1,27 +1,25 @@
-const PROXY_IP = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-// In production (served by proxy), API is on same host+port. In dev (Vite :5173), proxy is on :3001.
-const isDev = typeof window !== 'undefined' && window.location.port === '5173';
-const PROXY_URL = isDev
-  ? `http://${PROXY_IP}:3001/api/mikrotik`
-  : `${window.location.origin}/api/mikrotik`;
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
 
-// Helper to call MikroTik via the Proxy (uses RouterOS API port 8728)
-const callRouter = async (router, endpoint, method = 'GET', data = null, dateFilter = null) => {
-  const response = await fetch(PROXY_URL, {
+const getHeaders = () => {
+  const token = localStorage.getItem('hspot_token');
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': import.meta.env.VITE_API_SECRET || '15f707c1a3ad318c6b01e7e10695bf46d461929dbdeb53cefc8cc6673c39f1f5',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
+const callRouter = async (router, endpoint, method = 'GET', data = null) => {
+  if (!router || !router.id) throw new Error('Routeur non sélectionné.');
+
+  const response = await fetch(`${API_URL}/mikrotik`, {
     method: 'POST',
-    headers: { 
-      'Content-Type': 'application/json',
-      'X-API-Key': import.meta.env.VITE_API_SECRET || '15f707c1a3ad318c6b01e7e10695bf46d461929dbdeb53cefc8cc6673c39f1f5'
-    },
+    headers: getHeaders(),
     body: JSON.stringify({
-      ip: router.ip,
-      port: String(router.port || '8728'),
-      username: router.login,
-      password: router.password || '',
+      routerId: router.id,
       endpoint: endpoint,
       method: method,
-      data: data,
-      dateFilter: dateFilter  // 📱 Mobile optimization: server-side filtering
+      data: data
     })
   });
 
@@ -35,8 +33,7 @@ const callRouter = async (router, endpoint, method = 'GET', data = null, dateFil
 };
 
 export const getRouters = () => {
-  const saved = localStorage.getItem('hspot_routers');
-  return Promise.resolve(saved ? JSON.parse(saved) : []);
+  return Promise.resolve([]);
 };
 
 export const connectRouter = async (router) => {
@@ -97,106 +94,6 @@ export const getActiveHotspotUsers = async (router) => {
     return Array.isArray(list) ? list.length : 0;
   } catch (err) {
     return 0;
-  }
-};
-
-export const getFullActiveUsers = async (router) => {
-  try {
-    // Proplist explicite pour éviter l'auto-optimisation du proxy
-    const list = await callRouter(router, '/ip/hotspot/active', 'POST', {
-      proplist: '.id,user,address,mac-address,uptime,bytes-in,bytes-out,login-by,comment'
-    });
-    if (!Array.isArray(list)) return [];
-    
-    return list.map(a => ({
-      id: a['.id'],
-      user: a.user || a.name || 'Inconnu',
-      address: a.address || '',
-      macAddress: a['mac-address'] || '',
-      uptime: a.uptime || '0s',
-      bytesIn: parseInt(a['bytes-in'] || 0),
-      bytesOut: parseInt(a['bytes-out'] || 0),
-      comment: a.comment || '',
-      loginBy: a['login-by'] || ''
-    }));
-  } catch (err) {
-    console.error('Fetch full active users failed:', err);
-    return [];
-  }
-};
-
-export const disconnectActiveUser = async (router, userId) => {
-  try {
-    await callRouter(router, '/ip/hotspot/active', 'DELETE', { '.id': userId });
-    return { success: true };
-  } catch (err) {
-    console.error('Disconnect active user failed:', err);
-    return { success: false, error: err.message };
-  }
-};
-
-/**
- * Block or unblock a hotspot user by username (sets disabled=yes/no on the user account).
- * Optionally also disconnects the active session when blocking.
- */
-export const blockHotspotUser = async (router, username, block, activeSessionId = null) => {
-  try {
-    // Find user ID by name
-    const users = await callRouter(router, '/ip/hotspot/user', 'POST', {
-      proplist: '.id,name,disabled',
-      '?name': username
-    });
-    if (!Array.isArray(users) || users.length === 0) {
-      return { success: false, error: 'Utilisateur introuvable' };
-    }
-    const userId = users[0]['.id'];
-
-    // Set disabled=yes or disabled=no
-    await callRouter(router, '/ip/hotspot/user', 'PATCH', {
-      '.id': userId,
-      disabled: block ? 'yes' : 'no'
-    });
-
-    // If blocking, also kick the active session
-    if (block && activeSessionId) {
-      await callRouter(router, '/ip/hotspot/active', 'DELETE', { '.id': activeSessionId });
-    }
-
-    return { success: true };
-  } catch (err) {
-    console.error('Block user failed:', err);
-    return { success: false, error: err.message };
-  }
-};
-
-/**
- * Get full details of a hotspot user by username, including profile limits.
- */
-export const getHotspotUserDetails = async (router, username) => {
-  try {
-    const users = await callRouter(router, '/ip/hotspot/user', 'POST', {
-      proplist: '.id,name,profile,comment,uptime,bytes-in,bytes-out,disabled,limit-uptime,limit-bytes-total,password',
-      '?name': username
-    });
-    if (!Array.isArray(users) || users.length === 0) return null;
-    const u = users[0];
-    return {
-      id: u['.id'],
-      username: u.name,
-      profile: u.profile || '',
-      disabled: u.disabled === 'true' || u.disabled === 'yes',
-      comment: u.comment || '',
-      uptime: u.uptime || '0s',
-      bytesIn: parseInt(u['bytes-in'] || 0),
-      bytesOut: parseInt(u['bytes-out'] || 0),
-      limitUptime: u['limit-uptime'] || 'Illimité',
-      limitBytes: u['limit-bytes-total']
-        ? `${Math.round(parseInt(u['limit-bytes-total']) / 1024 / 1024)} MB`
-        : 'Illimité',
-    };
-  } catch (err) {
-    console.error('Get user details failed:', err);
-    return null;
   }
 };
 
@@ -298,24 +195,20 @@ export const getHotspotUsers = async (router) => {
     
     if (!Array.isArray(users)) return [];
 
-    const filteredUsers = users.filter(u => 
-      u.name !== 'default-trial' && u.name !== 'default'
-    );
-
-    const active = await callRouter(router, '/ip/hotspot/active', 'POST', {
-      proplist: '.id,user,address,mac-address,uptime,bytes-in,bytes-out'
-    });
+    const active = await callRouter(router, '/ip/hotspot/active');
     const profiles = await getVoucherProfiles(router);
 
     const activeMap = new Map();
     if (Array.isArray(active)) {
+      // Use lowercase keys for case-insensitive matching (abdoul == Abdoul)
       active.forEach(a => activeMap.set((a.user || '').toLowerCase(), a));
     }
 
     const profileMap = new Map();
     profiles.forEach(p => profileMap.set(p.name, p));
 
-    return filteredUsers.map(u => {
+    return users.map(u => {
+      // Case-insensitive lookup: "Abdoul", "abdoul", "ABDOUL" all match
       const activeSession = activeMap.get((u.name || '').toLowerCase());
       const profile = profileMap.get(u.profile) || {};
       
@@ -371,60 +264,258 @@ export const getHotspotUsers = async (router) => {
  * Fetches sales records stored as Mikhmon scripts in /system/script.
  * This is the most accurate way to match Mikhmon's internal accounting.
  */
-export const getMikhmonSales = async (router, query = {}, mode = 'full') => {
+export const getMikhmonSales = async (router) => {
   try {
-    // Build the dateFilter for server-side proxy filtering (📱 Mobile Optimization)
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    
-    let dateFilter = null;
-    if (mode === 'today') dateFilter = `${yyyy}-${mm}-${dd}`;
-    else if (mode === 'month') dateFilter = `${yyyy}-${mm}`;
-    // mode === 'full': no date filter, get everything
+    // Optimization: Use native MikroTik filtering (?comment=mikhmon) 
+    // to avoid downloading thousands of unrelated scripts.
+    const scripts = await callRouter(router, '/system/script', 'POST', {
+      proplist: '.id,name,comment',
+      '?comment': 'mikhmon'
+    });
 
-    const finalQuery = {
-      '.proplist': '.id,name',
-      ...query
-    };
+    if (!Array.isArray(scripts)) return [];
 
-    const allScripts = await callRouter(router, '/system/script', 'POST', finalQuery, dateFilter);
-
-    if (!Array.isArray(allScripts)) {
-      console.warn('Fallback: scripts non reçus sous forme d\'array');
-      return [];
-    }
-
-    // Local JS filter as double-check (proxy already does it, this is a safety net)
-    const mikhmonScripts = allScripts.filter(s => s.name && s.name.includes('-|-'));
-    console.log(`[MikroTik API] Found ${mikhmonScripts.length} matching scripts out of ${allScripts.length}`);
-    return parseMikhmonScripts(mikhmonScripts);
-
+    // Filter scripts created by Mikhmon
+    return scripts
+      .filter(s => s.comment === 'mikhmon' && s.name.includes('-|-'))
+      .map(s => {
+        const parts = s.name.split('-|-');
+        // Format: date-|-time-|-user-|-price-|-address-|-mac-|-validity-|-profile-|-comment
+        return {
+          id: s['.id'],
+          dateRaw: parts[0],
+          price: parseInt(parts[3]) || 0,
+          user: parts[2],
+          profile: parts[7] || '',
+          // Use the source (which is usually the date in Mikhmon) or the name date part
+          date: s.source || parts[0]
+        };
+      });
   } catch (err) {
     console.error('Fetch Mikhmon sales failed:', err);
     return [];
   }
 };
 
-const parseMikhmonScripts = (scripts) => {
-  return scripts
-    .filter(s => s.name && s.name.includes('-|-'))
-    .map(s => {
-      const parts = s.name.split('-|-');
-      // Mikhmon name format: date-|-time-|-user-|-price-|-address-|-mac-|-validity-|-profile-|-comment
-      // parts[0] is the date (e.g., apr/10/2026)
-      // parts[3] is the price
-      const rawPrice = parts[3] || '0';
-      const cleanPrice = parseInt(rawPrice.replace(/[^0-9]/g, '')) || 0;
-      
-      return {
-        id: s['.id'],
-        dateRaw: parts[0],
-        price: cleanPrice,
-        user: parts[2],
-        profile: parts[7] || '',
-        date: parts[0] // Use the date from the name directly instead of the heavy source
-      };
+export const getHotspotServers = async (router) => {
+  try {
+    const list = await callRouter(router, '/ip/hotspot/server');
+    if (!Array.isArray(list)) return [];
+    return list.map(s => ({
+      id: s['.id'],
+      name: s.name,
+      profile: s.profile
+    }));
+  } catch (err) {
+    console.error('Fetch servers failed:', err);
+    return [];
+  }
+};
+
+export const blockHotspotUser = async (router, usernameOrId, block = true, sessionId = null) => {
+  try {
+    // block/unblock the user account in /ip/hotspot/user
+    await callRouter(router, '/ip/hotspot/user/set', 'POST', {
+      '.id': usernameOrId,
+      disabled: block ? 'yes' : 'no'
     });
+    // If blocking and session active, also remove the active session
+    if (block && sessionId) {
+      try {
+        await callRouter(router, '/ip/hotspot/active/remove', 'POST', { '.id': sessionId });
+      } catch (_) { /* ignore if session already gone */ }
+    }
+    return { success: true };
+  } catch (err) {
+    console.error('Block/unblock user failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Returns full list of active hotspot sessions with rich fields.
+ */
+export const getFullActiveUsers = async (router) => {
+  try {
+    const list = await callRouter(router, '/ip/hotspot/active');
+    if (!Array.isArray(list)) return [];
+    return list.map(u => ({
+      id: u['.id'],
+      user: u.user || u.name || '',
+      address: u.address || '',
+      macAddress: u['mac-address'] || '',
+      hostname: u.host || u.comment || '',
+      uptime: u.uptime || '0s',
+      idleTime: u['idle-time'] || '',
+      sessionTimeLeft: u['session-time-left'] || '',
+      bytesIn: parseInt(u['bytes-in'] || 0),
+      bytesOut: parseInt(u['bytes-out'] || 0),
+      profile: u.profile || '',
+      server: u.server || '',
+    }));
+  } catch (err) {
+    console.error('getFullActiveUsers failed:', err);
+    return [];
+  }
+};
+
+/**
+ * Disconnects (removes) an active hotspot session by session ID.
+ */
+export const disconnectActiveUser = async (router, sessionId) => {
+  try {
+    await callRouter(router, '/ip/hotspot/active/remove', 'POST', { '.id': sessionId });
+    return { success: true };
+  } catch (err) {
+    console.error('Disconnect user failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Returns config details for a specific hotspot user account (from /ip/hotspot/user).
+ */
+export const getHotspotUserDetails = async (router, username) => {
+  try {
+    const list = await callRouter(router, '/ip/hotspot/user', 'POST', {
+      proplist: '.id,name,password,profile,comment,disabled,limit-uptime,limit-bytes-total'
+    });
+    if (!Array.isArray(list)) return null;
+    const user = list.find(u => (u.name || '').toLowerCase() === username.toLowerCase());
+    if (!user) return null;
+    return {
+      id: user['.id'],
+      name: user.name,
+      password: user.password,
+      profile: user.profile,
+      comment: user.comment,
+      disabled: user.disabled === 'true' || user.disabled === true,
+      limitUptime: user['limit-uptime'] || 'Illimité',
+      limitBytes: user['limit-bytes-total']
+        ? `${Math.round(parseInt(user['limit-bytes-total']) / 1024 / 1024)} MB`
+        : 'Illimité'
+    };
+  } catch (err) {
+    console.error('getHotspotUserDetails failed:', err);
+    return null;
+  }
+};
+
+/**
+ * Returns DHCP server leases from /ip/dhcp-server/lease.
+ */
+export const getDhcpLeases = async (router) => {
+  try {
+    const list = await callRouter(router, '/ip/dhcp-server/lease');
+    if (!Array.isArray(list)) return [];
+    return list.map(l => ({
+      id: l['.id'],
+      address: l.address || '',
+      macAddress: l['mac-address'] || '',
+      hostname: l.host || l['host-name'] || l.comment || '',
+      status: l.status || 'unknown',
+      comment: l.comment || '',
+      lastSeen: l['last-seen'] || '',
+    }));
+  } catch (err) {
+    console.error('getDhcpLeases failed:', err);
+    return [];
+  }
+};
+
+/**
+ * Returns wireless registration table clients.
+ */
+export const getWirelessClients = async (router) => {
+  try {
+    const list = await callRouter(router, '/interface/wireless/registration-table');
+    if (!Array.isArray(list)) return [];
+    return list.map(w => ({
+      id: w['.id'],
+      macAddress: w['mac-address'] || '',
+      interface: w.interface || '',
+      signal: w['signal-strength'] || '',
+      txCcq: parseInt(w['tx-ccq'] || 0),
+      throughput: w['tx-rate'] || w['rx-rate'] || '',
+      uptime: w.uptime || '',
+    }));
+  } catch (err) {
+    // Wireless not available on all routers — fail silently
+    return [];
+  }
+};
+
+/**
+ * Returns IP neighbor discovery table.
+ */
+export const getNeighbors = async (router) => {
+  try {
+    const list = await callRouter(router, '/ip/neighbor');
+    if (!Array.isArray(list)) return [];
+    return list.map(n => ({
+      id: n['.id'],
+      macAddress: n['mac-address'] || '',
+      address: n.address || '',
+      identity: n.identity || '',
+      platform: n.platform || '',
+      board: n.board || '',
+      interface: n.interface || '',
+    }));
+  } catch (err) {
+    return [];
+  }
+};
+
+/**
+ * Creates a new hotspot user profile.
+ */
+export const createHotspotProfile = async (router, profileData) => {
+  try {
+    const payload = {
+      name: profileData.name,
+      'session-timeout': profileData.sessionTimeout || '',
+      'idle-timeout': profileData.idleTimeout || '',
+      'shared-users': profileData.sharedUsers || '1',
+    };
+    if (profileData.rateLimit) payload['rate-limit'] = profileData.rateLimit;
+    if (profileData.comment) payload.comment = profileData.comment;
+    await callRouter(router, '/ip/hotspot/user/profile', 'PUT', payload);
+    return { success: true };
+  } catch (err) {
+    console.error('createHotspotProfile failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Updates an existing hotspot user profile by .id.
+ */
+export const updateHotspotProfile = async (router, id, profileData) => {
+  try {
+    const payload = { '.id': id };
+    if (profileData.name !== undefined) payload.name = profileData.name;
+    if (profileData.sessionTimeout !== undefined) payload['session-timeout'] = profileData.sessionTimeout;
+    if (profileData.idleTimeout !== undefined) payload['idle-timeout'] = profileData.idleTimeout;
+    if (profileData.sharedUsers !== undefined) payload['shared-users'] = profileData.sharedUsers;
+    if (profileData.rateLimit !== undefined) payload['rate-limit'] = profileData.rateLimit;
+    if (profileData.comment !== undefined) payload.comment = profileData.comment;
+    await callRouter(router, '/ip/hotspot/user/profile/set', 'POST', payload);
+    return { success: true };
+  } catch (err) {
+    console.error('updateHotspotProfile failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Deletes a hotspot user profile by .id.
+ */
+export const deleteHotspotProfile = async (router, id) => {
+  try {
+    await callRouter(router, '/ip/hotspot/user/profile/remove', 'POST', { '.id': id });
+    return { success: true };
+  } catch (err) {
+    console.error('deleteHotspotProfile failed:', err);
+    return { success: false, error: err.message };
+  }
 };

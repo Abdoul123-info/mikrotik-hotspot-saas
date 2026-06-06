@@ -1,29 +1,58 @@
 {
-  "name": "app-hotspot",
+  "name": "hotspot-manager",
+  "author": "Mikhmon Admin",
+  "description": "Système de gestion MikroTik Hotspot portable et résilient",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "main": "desktop/main.js",
   "type": "module",
   "engines": {
     "node": "22"
   },
   "scripts": {
     "dev": "vite",
-    "backend": "node mikrotik-proxy.js",
+    "backend": "node backend/server.js",
     "start": "node mikrotik-proxy.js",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "electron ./desktop/main.js",
+    "build:desktop": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.hotspot.manager",
+    "productName": "HotspotManager",
+    "directories": {
+      "output": "build_v2"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "mikrotik-proxy.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "forceCodeSigning": false
+    }
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "axios": "^1.14.0",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.10.0",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.1",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "firebase": "^12.13.0",
+    "firebase-admin": "^13.10.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.7.0",
     "node-routeros": "^1.6.8",
+    "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-is": "^19.2.5",
     "react-router-dom": "^7.13.2",
     "recharts": "^3.8.1"
   },
@@ -33,6 +62,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",

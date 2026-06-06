@@ -144,16 +144,16 @@ function DashboardPage() {
             </div>
           </div>
           
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ height: 300, width: '100%', minHeight: 300 }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <AreaChart data={bandwidthData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorRx" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00E5A0" stopOpacity={0.6}/>
+                    <stop offset="5%" stopColor="#00E5A0" stopOpacity={0.4}/>
                     <stop offset="95%" stopColor="#00E5A0" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorTx" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0066FF" stopOpacity={0.6}/>
+                    <stop offset="5%" stopColor="#0066FF" stopOpacity={0.4}/>
                     <stop offset="95%" stopColor="#0066FF" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
@@ -174,33 +174,33 @@ function DashboardPage() {
                 />
                 <Tooltip 
                   contentStyle={{ 
-                    backgroundColor: 'rgba(21, 25, 33, 0.95)', 
-                    border: '1px solid rgba(255, 255, 255, 0.05)', 
+                    backgroundColor: 'rgba(7, 9, 13, 0.95)', 
+                    border: '1px solid rgba(0, 229, 160, 0.2)', 
                     borderRadius: '16px',
-                    backdropFilter: 'blur(10px)',
-                    boxShadow: '0 10px 30px -10px rgba(0,0,0,0.5)'
+                    backdropFilter: 'blur(20px)',
+                    boxShadow: '0 0 30px rgba(0, 229, 160, 0.1)'
                   }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                  itemStyle={{ fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="rx" 
-                  name="Entrée (RX)"
+                  name="Réception"
                   stroke="#00E5A0" 
-                  strokeWidth={4} 
+                  strokeWidth={3} 
                   fillOpacity={1} 
                   fill="url(#colorRx)" 
-                  animationDuration={1500}
+                  animationDuration={2000}
                 />
                 <Area 
                   type="monotone" 
                   dataKey="tx" 
-                  name="Sortie (TX)"
+                  name="Émission"
                   stroke="#0066FF" 
-                  strokeWidth={4} 
+                  strokeWidth={3} 
                   fillOpacity={1} 
                   fill="url(#colorTx)" 
-                  animationDuration={1500}
+                  animationDuration={2000}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -208,41 +208,46 @@ function DashboardPage() {
         </div>
 
         {/* Real-time Status */}
-        <div className="glass-card p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-heading font-bold">État du Routeur</h3>
+        <div className="neon-card p-6">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-lg font-heading font-black tracking-widest text-white/80">Système</h3>
+            {activeRouter && <div className="pulse-green" title="Connexion Live" />}
           </div>
 
-          <div className="space-y-6">
-            <div className="p-4 rounded-xl bg-white/5 border border-white/5">
-              <div className="flex justify-between mb-2">
-                <span className="text-xs text-white/40 uppercase">Charge CPU</span>
-                <span className="text-xs font-bold text-primary">{bandwidthData[bandwidthData.length-1]?.cpu || 0}%</span>
+          <div className="space-y-8 relative">
+            <div className="scanner-line" />
+            
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Charge CPU</span>
+                <span className="text-sm font-black text-primary font-mono">{bandwidthData[bandwidthData.length-1]?.cpu || 0}%</span>
               </div>
-              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <div 
-                  className="h-full bg-primary transition-all duration-1000" 
+                  className="h-full bg-primary shadow-[0_0_15px_rgba(0,229,160,0.5)] transition-all duration-1000" 
                   style={{ width: `${bandwidthData[bandwidthData.length-1]?.cpu || 0}%` }} 
                 />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-white/5 border border-white/5">
-              <div className="flex justify-between mb-2">
-                <span className="text-xs text-white/40 uppercase">Utilisation RAM</span>
-                <span className="text-xs font-bold text-secondary">{bandwidthData[bandwidthData.length-1]?.ram || 0}%</span>
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Mémoire Vive</span>
+                <span className="text-sm font-black text-secondary font-mono">{bandwidthData[bandwidthData.length-1]?.ram || 0}%</span>
               </div>
-              <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
                 <div 
-                  className="h-full bg-secondary transition-all duration-1000" 
+                  className="h-full bg-secondary shadow-[0_0_15px_rgba(0,102,255,0.5)] transition-all duration-1000" 
                   style={{ width: `${bandwidthData[bandwidthData.length-1]?.ram || 0}%` }} 
                 />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
-              <p className="text-[10px] text-primary font-bold uppercase tracking-widest mb-1">Dernière mise à jour</p>
-              <p className="text-xs">{bandwidthData[bandwidthData.length-1]?.time || '---'}</p>
+            <div className="pt-4 mt-4 border-t border-white/5">
+              <div className="flex items-center justify-between text-[9px] uppercase font-bold text-white/20">
+                <span>Dernière télémétrie</span>
+                <span className="text-primary/60 font-mono">{bandwidthData[bandwidthData.length-1]?.time || 'En attente...'}</span>
+              </div>
             </div>
           </div>
         </div>

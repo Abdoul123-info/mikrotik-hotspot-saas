@@ -5,6 +5,8 @@ import { RouterOSAPI } from 'node-routeros';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
+import { networkInterfaces } from 'os';
+import QRCode from 'qrcode';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -77,44 +79,45 @@ async function getConnection(ip, username, password, port) {
             const existing = connectionPool.get(key);
             if (existing.connected) return existing;
             
-            // If it failed very recently (last 10s), don't even try - fail fast
-            if (existing.lastError && Date.now() - existing.lastError < 10000) {
-                throw new Error('Connexion impossible (réessayez dans 10s)');
+            if (existing.lastError && Date.now() - existing.lastError < 5000) {
+                throw new Error('Lockout: Attente de 5s avant nouvel essai.');
             }
-            console.log(`🔄 Reconnectant vers ${key}...`);
         }
 
+        console.log(`📡 [PROBE] Tentative de connexion TCP vers ${ip}:${port}...`);
+        
         const conn = new RouterOSAPI({
             host: ip,
             user: username,
             password: password || '',
             port: parseInt(port) || 8728,
-            timeout: 10, // Fail fast (10s) to avoid UI hanging
+            timeout: 20,
             tls: port === '8729' ? { rejectUnauthorized: false } : false
         });
 
-        await conn.connect();
+        const connPromise = conn.connect();
         
-        // Listen for errors to remove from pool if connection drops or crashes
+        // Timeout watchdog for the connect promise itself
+        const result = await Promise.race([
+            connPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_BRIDGE: Le tunnel Playit ne répond pas.')), 18000))
+        ]);
+
         const errorHandler = (err) => {
-            console.error(`🔌 Connection error for ${key}:`, err.message);
-            if (err.message.includes('!empty') || err.message.includes('unknown reply')) {
-                console.warn(`💡 RouterOS busy or filter error on ${key} (!empty). Cleaning connection.`);
-            }
+            console.error(`🔌 [DISCONNECT] ${key}:`, err.message);
             connectionPool.delete(key);
-            conn.close(); // Force close to clean up sockets
+            try { conn.close(); } catch(e) {}
         };
 
         conn.on('error', errorHandler);
-
         connectionPool.set(key, conn);
-        console.log(`🔌 Connexion établie et persistante : ${key}`);
+        console.log(`✅ [ESTABLISHED] Connexion réussie : ${key}`);
         return conn;
     } catch (err) {
         const key = `${username}@${ip}:${port}`;
         connectionPool.set(key, { connected: false, lastError: Date.now() });
-        console.error(`❌ Échec de la connexion pour ${key}:`, err.message);
-        throw err; // Re-throw to be caught by the route handler
+        console.error(`❌ [FAILURE] @ ${ip}:${port} -> Error: ${err.message || err.code || 'UNKNOWN'}`);
+        throw err;
     }
 }
 
@@ -155,6 +158,55 @@ const endpointToCommand = (endpoint, method, data) => {
 
 // Health Check
 app.get('/health', (req, res) => res.send('OK'));
+
+// Get server network IP and QR code for mobile login access
+app.get('/api/network-info', async (req, res) => {
+  try {
+    const nets = networkInterfaces();
+    let ip = '127.0.0.1';
+    
+    // Sort interfaces to prioritize physical adapters (Wi-Fi, Ethernet) over virtual cards (WSL, Docker, etc.)
+    const sortedInterfaces = Object.keys(nets).sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        
+        const aIsVirtual = aLower.includes('virtual') || aLower.includes('wsl') || aLower.includes('docker') || aLower.includes('vbox') || aLower.includes('vmware') || aLower.includes('vethernet');
+        const bIsVirtual = bLower.includes('virtual') || bLower.includes('wsl') || bLower.includes('docker') || bLower.includes('vbox') || bLower.includes('vmware') || bLower.includes('vethernet');
+        
+        const aIsPhysical = aLower.includes('wi-fi') || aLower.includes('wifi') || aLower.includes('wlan') || aLower.includes('ethernet') || aLower.includes('sans fil');
+        const bIsPhysical = bLower.includes('wi-fi') || bLower.includes('wifi') || bLower.includes('wlan') || bLower.includes('ethernet') || bLower.includes('sans fil');
+        
+        if (aIsVirtual && !bIsVirtual) return 1;
+        if (!aIsVirtual && bIsVirtual) return -1;
+        if (aIsPhysical && !bIsPhysical) return -1;
+        if (!aIsPhysical && bIsPhysical) return 1;
+        return 0;
+    });
+
+    for (const name of sortedInterfaces) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) {
+                ip = net.address;
+                break;
+            }
+        }
+        if (ip !== '127.0.0.1') break;
+    }
+
+    const appUrl = `http://${ip}:${PORT}`;
+    const qrCodeDataUrl = await QRCode.toDataURL(appUrl);
+
+    res.status(200).json({
+      ip,
+      port: PORT,
+      url: appUrl,
+      qrCode: qrCodeDataUrl
+    });
+  } catch (error) {
+    console.error('Failed to generate network info or QR code:', error);
+    res.status(500).json({ error: 'Failed to retrieve network info.' });
+  }
+});
 
 // Authentication Middleware for API security
 const authenticate = (req, res, next) => {
@@ -285,20 +337,20 @@ app.post('/api/mikrotik', authenticate, async (req, res) => {
     res.status(200).json(output);
 
   } catch (error) {
-    // DO NOT CRASH THE ENTIRE SERVER
-    console.error(`❌ Erreur sur ${endpoint} @ ${ip}:`, error.message);
+    const duration = Date.now() - start;
+    const errorMsg = error.message || (typeof error === 'string' ? error : JSON.stringify(error));
+    const errorCode = error.code || 'UNKNOWN';
     
-    let errMsg = error.message || 'Erreur inconnue';
-    if (error.code === 'ETIMEDOUT' || error.message.includes('TIMEOUT') || error.message.includes('Timed out')) {
-        errMsg = 'Le routeur ne repond pas assez vite (Timeout).';
-        // Clean up stale connection
-        const key = `${username}@${ip}:${port || 8728}`;
-        connectionPool.delete(key);
-    }
+    console.error(`❌ Échec de la connexion (${duration}ms) @ ${ip}:${port} : [${errorCode}] ${errorMsg}`);
     
+    let tip = 'Vérifiez que le service API du MikroTik (/ip service api) est activé sur le port 8728.';
+    if (errorCode === 'ETIMEDOUT') tip = 'Le routeur ne répond pas. Vérifiez la connexion Starlink ou l\'adresse IP.';
+    if (errorMsg.includes('invalid') || errorMsg.includes('credentials') || errorMsg.includes('password')) tip = 'Utilisateur ou mot de passe MikroTik incorrect. Vérifiez les réglages du routeur dans le SaaS.';
+    if (errorCode === 'ECONNREFUSED') tip = 'Connexion refusée. Vérifiez que le port 8728 est ouvert dans "/ip service".';
+
     res.status(500).json({ 
-      error: errMsg,
-      tip: 'Verifiez la connexion au routeur.'
+      error: `[${errorCode}] ${errorMsg}`,
+      tip: tip
     });
   }
 });
@@ -310,9 +362,33 @@ if (existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 Proxy MikroTik RÉSILIENT (Port ${PORT})`);
-  console.log(`   → API:      http://localhost:${PORT}/api/mikrotik`);
-  console.log(`   → Dashboard: http://localhost:${PORT}`);
-  console.log(`   → Réseau:    http://<votre-IP-locale>:${PORT} (mobile)\n`);
-});
+let server = null;
+
+export const startServer = (port = PORT) => {
+  return new Promise((resolve) => {
+    server = app.listen(port, '0.0.0.0', () => {
+      console.log(`\n🚀 Proxy MikroTik RÉSILIENT (Port ${port})`);
+      console.log(`   → API:      http://localhost:${port}/api/mikrotik`);
+      console.log(`   → Dashboard: http://localhost:${port}`);
+      console.log(`   → Réseau:    http://<votre-IP-locale>:${port} (mobile)\n`);
+      resolve(server);
+    });
+  });
+};
+
+export const stopServer = () => {
+  if (server) {
+    server.close();
+    server = null;
+    console.log('🛑 Serveur Hotspot arrêté.');
+  }
+};
+
+// Auto-start if run directly
+import { realpathSync } from 'fs';
+const isMain = process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+
+if (isMain || import.meta.url === `file://${fileURLToPath(import.meta.url)}`.replace(/\\/g, '/')) {
+  startServer();
+}
+

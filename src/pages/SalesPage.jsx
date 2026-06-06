@@ -16,7 +16,8 @@ import {
   Ticket,
   ChevronLeft,
   ChevronRight,
-  Download
+  Download,
+  Search
 } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useRouter } from '../contexts/RouterContext';
@@ -80,16 +81,19 @@ function SalesPage() {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-indexed
   const [selectedDay, setSelectedDay] = useState(now.getDate());
+  const [search, setSearch] = useState('');
   const [showAllRows, setShowAllRows] = useState(false);
   const MAX_DISPLAY = 100;
 
   const allTickets = useMemo(() => {
     return sales.map(s => ({
       id: s.id,
-      username: s.user, // Corrected: use .user from the context
+      username: s.user,
       price: s.price,
       profileName: s.profile,
       comment: s.date,
+      address: s.address,
+      macAddress: s.macAddress,
       status: 'used'
     }));
   }, [sales]);
@@ -117,14 +121,22 @@ function SalesPage() {
 
   const filteredTickets = useMemo(() => {
     const { start, end } = getPeriodBounds(viewMode, selectedYear, selectedMonth, selectedDay);
+    const q = search.toLowerCase();
     return salesTickets.filter(t => {
+      // Period filter
       const d = parseTicketDate(t);
-      // Tickets without a date (no dd/mm/yyyy in comment) are excluded → they can't be attributed to a specific day
       if (!d) return false;
-      // Exact boundary: from 00:00:00 to 23:59:59 local time
-      return d >= start && d <= end;
+      const matchesPeriod = d >= start && d <= end;
+      
+      // Search filter
+      const matchesSearch = !q ||
+        (t.username || '').toLowerCase().includes(q) ||
+        (t.address || '').toLowerCase().includes(q) ||
+        (t.macAddress || '').toLowerCase().includes(q);
+
+      return matchesPeriod && matchesSearch;
     });
-  }, [salesTickets, viewMode, selectedYear, selectedMonth, selectedDay]);
+  }, [salesTickets, viewMode, selectedYear, selectedMonth, selectedDay, search]);
 
   const totalRevenue = filteredTickets.reduce((acc, t) => acc + (parseInt(t.price) || 0), 0);
   const usedCount = filteredTickets.filter(t => t.status === 'used' || t.status === 'online').length;
@@ -337,38 +349,62 @@ function SalesPage() {
               className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
             />
           )}
+
+          {/* Search bar */}
+          <div className="flex-1 relative group">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-primary transition-colors" />
+            <input
+              type="text"
+              placeholder="Rechercher IP, MAC ou Ticket..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full h-12 pl-12 pr-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm text-white placeholder:text-white/20 transition-all font-bold"
+            />
+          </div>
         </div>
       </div>
 
-      {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="glass-card p-5 border-primary/20 bg-primary/5">
-          <p className="text-[10px] uppercase font-heading font-bold text-white/40 tracking-widest mb-1">Chiffre d'Affaires</p>
-          <h2 className="text-3xl font-heading font-black text-primary">{formatCurrency(totalRevenue, settings)}</h2>
-          <p className="text-[10px] text-white/30 mt-1 uppercase">Période : {periodLabel()}</p>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="neon-card p-6 border-primary/30 bg-primary/5 group">
+          <div className="scanner-line opacity-20" />
+          <p className="text-[10px] uppercase font-heading font-black text-primary tracking-[0.2em] mb-2">Chiffre d'Affaires</p>
+          <h2 className="text-4xl font-heading font-black text-white group-hover:text-primary transition-colors">{formatCurrency(totalRevenue, settings)}</h2>
+          <div className="mt-4 flex items-center gap-2 text-[9px] text-white/30 uppercase font-bold">
+            <TrendingUp size={12} className="text-primary" />
+            <span>Période : {periodLabel()}</span>
+          </div>
         </div>
-        <div className="glass-card p-5">
-          <p className="text-[10px] uppercase font-heading font-bold text-white/40 tracking-widest mb-1">Tickets Vendus</p>
-          <h2 className="text-3xl font-heading font-black text-white">{filteredTickets.length}</h2>
-          <p className="text-[10px] text-white/30 mt-1 uppercase">{usedCount} consommés</p>
+        <div className="neon-card p-6 group">
+          <p className="text-[10px] uppercase font-heading font-black text-white/40 tracking-[0.2em] mb-2">Tickets Vendus</p>
+          <h2 className="text-4xl font-heading font-black text-white group-hover:text-primary transition-colors">{filteredTickets.length}</h2>
+          <div className="mt-4 flex items-center gap-2 text-[9px] text-white/30 uppercase font-bold">
+            <Ticket size={12} />
+            <span>{usedCount} CONSOMMÉS</span>
+          </div>
         </div>
-        <div className="glass-card p-5">
-          <p className="text-[10px] uppercase font-heading font-bold text-white/40 tracking-widest mb-1">Prix Moyen</p>
-          <h2 className="text-3xl font-heading font-black text-white">
+        <div className="neon-card p-6 group">
+          <p className="text-[10px] uppercase font-heading font-black text-white/40 tracking-[0.2em] mb-2">Panier Moyen</p>
+          <h2 className="text-4xl font-heading font-black text-white group-hover:text-primary transition-colors">
             {filteredTickets.length > 0 ? formatCurrency(Math.round(totalRevenue / filteredTickets.length), settings) : '—'}
           </h2>
-          <p className="text-[10px] text-white/30 mt-1 uppercase">{byProfile.length} profil(s)</p>
+          <div className="mt-4 flex items-center gap-2 text-[9px] text-white/30 uppercase font-bold">
+            <TrendingUp size={12} />
+            <span>{byProfile.length} PROFIL(S) ACTIF(S)</span>
+          </div>
         </div>
       </div>
+
 
       {/* ── Chart + Profile Summary ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Bar Chart */}
-        <div className="lg:col-span-2 glass-card p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-heading font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <TrendingUp size={14} /> Ventes par {viewMode === 'year' ? 'mois' : viewMode === 'month' ? 'jour' : 'profil'}
+        <div className="lg:col-span-2 neon-card p-6">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-sm font-heading font-black uppercase tracking-[0.2em] text-white/40 flex items-center gap-3">
+              <TrendingUp size={16} className="text-primary" /> 
+              Ventes par {viewMode === 'year' ? 'mois' : viewMode === 'month' ? 'jour' : 'profil'}
             </h3>
           </div>
           {isLoading ? (
@@ -377,20 +413,21 @@ function SalesPage() {
             </div>
           ) : chartData.length === 0 || chartData.every(d => d.total === 0) ? (
             <div className="h-[280px] flex items-center justify-center">
-              <p className="text-white/20 uppercase text-xs font-bold">Aucune vente sur cette période</p>
+              <p className="text-white/20 uppercase text-[10px] font-black tracking-widest">Signal plat : Aucune donnée</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `${v/1000}k`} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff03" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: 'rgba(255,255,255,0.2)', fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.2)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `${v/1000}k`} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0, 229, 160, 0.03)' }} />
+                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                   {chartData.map((entry, i) => (
                     <Cell
                       key={i}
-                      fill={entry.total > 0 ? 'rgba(0, 230, 118, 0.8)' : 'rgba(255,255,255,0.05)'}
+                      fill={entry.total > 0 ? '#00E5A0' : 'rgba(255,255,255,0.03)'}
+                      fillOpacity={0.8}
                     />
                   ))}
                 </Bar>
@@ -400,90 +437,141 @@ function SalesPage() {
         </div>
 
         {/* Profile breakdown */}
-        <div className="glass-card p-6">
-          <h3 className="text-sm font-heading font-bold uppercase tracking-widest text-white/40 mb-4 flex items-center gap-2">
-            <Ticket size={14} /> Par profil
+        <div className="neon-card p-6 border-white/5 bg-white/[0.01]">
+          <h3 className="text-sm font-heading font-black uppercase tracking-[0.2em] text-white/40 mb-6 flex items-center gap-3">
+            <Ticket size={16} /> Ventilation
           </h3>
           {byProfile.length === 0 ? (
-            <p className="text-white/20 text-xs uppercase font-bold">Aucun ticket</p>
+            <p className="text-white/20 text-[10px] uppercase font-black">Néant</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {byProfile.map(([name, data]) => {
                 const pct = totalRevenue > 0 ? (data.total / totalRevenue) * 100 : 0;
                 return (
-                  <div key={name}>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold text-white truncate max-w-[120px]">{name}</span>
+                  <div key={name} className="group/item">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <span className="text-xs font-black text-white/80 group-hover/item:text-primary transition-colors truncate max-w-[120px]">{name}</span>
                       <div className="text-right">
-                        <span className="text-xs font-black text-primary">{formatCurrency(data.total, settings)}</span>
-                        <span className="text-[9px] text-white/30 ml-1">({data.count})</span>
+                        <span className="text-xs font-black text-white">{formatCurrency(data.total, settings)}</span>
+                        <span className="text-[9px] text-white/20 ml-1 font-mono">x{data.count}</span>
                       </div>
                     </div>
-                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-primary rounded-full transition-all duration-700"
+                        className="h-full bg-primary shadow-[0_0_10px_rgba(0,229,160,0.5)] transition-all duration-1000"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
                   </div>
                 );
               })}
-              <div className="pt-3 border-t border-white/10 flex justify-between">
-                <span className="text-[10px] text-white/30 uppercase font-bold">Total général</span>
-                <span className="text-sm font-black text-primary">{formatCurrency(totalRevenue, settings)}</span>
+              <div className="pt-4 mt-6 border-t border-white/5 flex justify-between items-center">
+                <span className="text-[10px] text-white/20 uppercase font-black tracking-widest">Net Période</span>
+                <span className="text-lg font-heading font-black text-primary">{formatCurrency(totalRevenue, settings)}</span>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── Detail Table with progressive total ── */}
-      <div className="glass-card overflow-hidden">
-        <div className="p-5 border-b border-white/10 bg-white/[0.02] flex items-center justify-between">
-          <h3 className="text-sm font-heading font-bold uppercase tracking-widest">
-            Détail — {sortedTableData.length} ticket(s)
-          </h3>
-          <span className="text-[10px] text-white/30 uppercase">Total progressif →</span>
+      {/* Detail Table */}
+      <div className="neon-card overflow-hidden">
+        <div className="p-5 border-b border-white/5 bg-white/[0.02] flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-[10px] font-heading font-black uppercase tracking-[0.3em] text-white/60 mb-1">
+              Journal de Transaction · {sortedTableData.length} entrées
+            </h3>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="text-[9px] text-white/30 uppercase font-bold">Flux de données actif</span>
+            </div>
+          </div>
+          
+          {/* Quick Summary Banner (Mikhmon style) */}
+          {byProfile.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {byProfile.map(([name, data]) => (
+                <div key={name} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg flex items-center gap-2">
+                  <span className="text-[10px] font-black text-white/40 uppercase">{name}</span>
+                  <span className="text-xs font-black text-primary">{data.count}</span>
+                </div>
+              ))}
+              <div className="px-3 py-1.5 bg-primary/10 border border-primary/30 rounded-lg flex items-center gap-2">
+                <span className="text-[10px] font-black text-primary uppercase">Total</span>
+                <span className="text-xs font-black text-white">{formatCurrency(totalRevenue, settings)}</span>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-left">
-            <thead className="sticky top-0 z-10 bg-[#0d1117]">
-              <tr className="text-white/40 uppercase text-[10px] tracking-widest font-heading border-b border-white/5">
-                <th className="px-5 py-3">#</th>
-                <th className="px-5 py-3">Utilisateur</th>
-                <th className="px-5 py-3">Profil</th>
-                <th className="px-5 py-3">Prix</th>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3 text-primary">Total cumulé</th>
+            <thead className="sticky top-0 z-10 bg-[#07090D] border-b border-white/5">
+              <tr className="text-white/20 uppercase text-[9px] tracking-[0.2em] font-black">
+                <th className="px-6 py-4">#</th>
+                <th className="px-6 py-4">Ticket</th>
+                <th className="px-6 py-4">Adresse IP</th>
+                <th className="px-6 py-4">MAC</th>
+                <th className="px-6 py-4">Profil</th>
+                <th className="px-6 py-4 text-center">Heure</th>
+                <th className="px-6 py-4 text-right">Montant</th>
               </tr>
             </thead>
-            <tbody className="text-sm font-body divide-y divide-white/[0.04]">
+            <tbody className="text-xs divide-y divide-white/[0.02]">
               {sortedTableData.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-5 py-20 text-center text-white/20 uppercase text-xs font-bold">
-                    {isLoading ? 'Chargement...' : 'Aucune vente sur cette période'}
+                  <td colSpan="7" className="px-6 py-20 text-center text-white/10 uppercase text-[10px] font-black tracking-widest">
+                    {isLoading ? 'Scanning...' : 'Aucune vente détectée pour cette période'}
                   </td>
                 </tr>
               ) : (
                 (showAllRows ? sortedTableData : sortedTableData.slice(0, MAX_DISPLAY)).map((t, i) => {
                   const d = t._parsed;
                   return (
-                    <tr key={t.id || i} className="hover:bg-white/[0.02] transition-all">
-                      <td className="px-5 py-3 text-white/20 text-[10px] font-bold">{i + 1}</td>
-                      <td className="px-5 py-3 font-mono font-bold text-primary">{t.username}</td>
-                      <td className="px-5 py-3">
-                        <span className="text-xs font-bold uppercase text-white/70">{t.profileName || t.profileId || '—'}</span>
+                    <tr key={t.id || i} className="hover:bg-primary/[0.02] transition-colors group">
+                      <td className="px-6 py-4 text-white/20 font-mono text-[10px]">{String(i+1).padStart(2,'0')}</td>
+                      <td className="px-6 py-4">
+                        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white font-black font-mono group-hover:border-primary/30 group-hover:text-primary transition-all">{t.username}</span>
                       </td>
-                      <td className="px-5 py-3 font-bold">{formatCurrency(parseInt(t.price) || 0, settings)}</td>
-                      <td className="px-5 py-3 text-xs">
-                        <div className="text-white/60">{d ? d.toLocaleDateString('fr-FR') : '—'}</div>
-                        {d && (d.getHours() !== 0 || d.getMinutes() !== 0) && (
-                          <div className="text-primary/50 font-mono text-[10px]">
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => {
+                            if(t.address) {
+                              navigator.clipboard.writeText(t.address);
+                              // Simple feedback could be added here if needed
+                            }
+                          }}
+                          className="text-white/40 font-mono text-[10px] hover:text-primary transition-colors hover:underline"
+                          title="Cliquez pour copier l'IP"
+                        >
+                          {t.address || '---'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4">
+                        <button 
+                          onClick={() => {
+                            if(t.macAddress) {
+                              navigator.clipboard.writeText(t.macAddress);
+                            }
+                          }}
+                          className="text-white/40 font-mono text-[10px] uppercase hover:text-primary transition-colors hover:underline"
+                          title="Cliquez pour copier la MAC"
+                        >
+                          {t.macAddress || '---'}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-white/60 font-bold uppercase text-[10px] tracking-wider">{t.profileName}</span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {d ? (
+                          <span className="text-primary/60 font-black font-mono">
                             {String(d.getHours()).padStart(2,'0')}:{String(d.getMinutes()).padStart(2,'0')}
-                          </div>
-                        )}
+                          </span>
+                        ) : '---'}
                       </td>
-                      <td className="px-5 py-3 font-black text-primary">{formatCurrency(t.cumul, settings)}</td>
+                      <td className="px-6 py-4 text-right font-black text-white group-hover:text-primary transition-colors">
+                        {formatCurrency(parseInt(t.price) || 0, settings)}
+                      </td>
                     </tr>
                   );
                 })

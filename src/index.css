@@ -4,7 +4,7 @@
   --color-primary: #00E5A0;
   --color-secondary: #0066FF;
   --color-accent: #FF6B35;
-  --color-bg-dark: #0A0C10;
+  --color-bg-dark: #07090D;
   
   --font-heading: "Syne", sans-serif;
   --font-body: "DM Sans", sans-serif;
@@ -16,22 +16,51 @@
 
 @layer base {
   body {
-    @apply bg-[#0A0C10] text-[#E0E0E0] font-body transition-colors duration-300;
+    @apply bg-[#07090D] text-[#E0E0E0] font-body transition-colors duration-300 relative min-h-screen overflow-x-hidden;
   }
+  
+  /* Matrix Cyber Grid Background */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 200%;
+    height: 200%;
+    background-image: 
+      linear-gradient(rgba(0, 229, 160, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 229, 160, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: -1;
+    transform: perspective(500px) rotateX(60deg) translateY(-20%);
+    opacity: 0.5;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading uppercase tracking-tight;
+    text-shadow: 0 0 20px rgba(0, 229, 160, 0.1);
   }
 }
 
 @layer components {
   .glass-card {
-    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl;
+    @apply bg-white/[0.03] backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl relative overflow-hidden;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.82);
+  }
+  .neon-card {
+    @apply bg-white/[0.03] backdrop-blur-2xl border border-primary/20 rounded-2xl relative overflow-hidden;
+    box-shadow: 0 0 20px rgba(0, 229, 160, 0.05), 0 8px 32px 0 rgba(0, 0, 0, 0.82);
+  }
+  .neon-card:hover {
+    @apply border-primary/40 bg-white/[0.05];
+    box-shadow: 0 0 30px rgba(0, 229, 160, 0.1), 0 8px 32px 0 rgba(0, 0, 0, 0.82);
+    transition: all 0.5s ease;
   }
   .glass-card-hover {
-    @apply hover:bg-white/10 hover:border-white/20 transition-all duration-300;
+    @apply hover:bg-white/[0.07] hover:border-white/20 transition-all duration-500;
   }
   .btn-primary {
-    @apply bg-[#00E5A0] hover:bg-[#00D494] text-[#0A0C10] font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#00E5A0]/20 cursor-pointer;
+    @apply bg-[#00E5A0] hover:bg-[#00FFAF] text-[#07090D] font-black px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#00E5A0]/20 cursor-pointer uppercase tracking-wider text-xs;
   }
   .btn-secondary {
     @apply bg-[#0066FF] hover:bg-[#0055DD] text-white font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#0066FF]/20 cursor-pointer;
@@ -39,9 +68,35 @@
   .btn-accent {
     @apply bg-[#FF6B35] hover:bg-[#EE5A24] text-white font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#FF6B35]/20 cursor-pointer;
   }
-  .input-glass {
-    @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-[#00E5A0] focus:ring-1 focus:ring-[#00E5A0] transition-all;
+  
+  /* Status Animations */
+  .pulse-green {
+    @apply w-2 h-2 rounded-full bg-primary;
+    box-shadow: 0 0 10px #00E5A0;
+    animation: pulse 2s infinite;
   }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.4; box-shadow: 0 0 20px #00E5A0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100%); }
+}
+
+.scanner-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 229, 160, 0.5), transparent);
+  animation: scan 4s linear infinite;
+  pointer-events: none;
 }
 
 /* Custom Scrollbar */
