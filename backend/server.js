@@ -255,6 +255,9 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
 
   const start = Date.now();
 
+  // Déterminer tôt si c'est une opération de lecture (nécessaire dans le catch pour le fallback agent)
+  const isReadOperation = method === 'GET' || !method || (method === 'POST' && !['set','add','remove'].some(op => endpoint.includes(op)));
+
   try {
     const routerDoc = await adminDb.collection('routers').doc(routerId).get();
     
@@ -286,7 +289,7 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
     let finalParams = [...baseParams];
     if (proplist) finalParams.push(`=.proplist=${proplist}`);
     
-    const isReadOperation = method === 'GET' || !method || cmd.endsWith('/print') || (method === 'POST' && (endpoint.includes('print') || !['SET','PUT','PATCH','DELETE'].includes(method)));
+    // isReadOperation déjà déterminé avant le try (pour le fallback agent dans le catch)
     const cacheKey = getCacheKey(router.ip, endpoint, cmd, finalParams, dateFilter);
 
     if (isReadOperation && responseCache.has(cacheKey)) {
