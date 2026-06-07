@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn, UserPlus, Mail, Lock, Loader2, Router, QrCode, Wifi } from 'lucide-react';
 import { auth } from '../config/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { BASE_URL } from '../config/api';
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -18,7 +19,7 @@ export default function LoginPage() {
     async function fetchNetworkInfo() {
       try {
         const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
-        const response = await fetch(`${window.location.origin}/api/network-info?port=${currentPort}`);
+        const response = await fetch(`${BASE_URL}/api/network-info?port=${currentPort}`);
         if (response.ok) {
           const data = await response.json();
           setNetworkInfo(data);

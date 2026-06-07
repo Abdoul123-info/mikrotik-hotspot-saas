@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api`;
+import { BASE_URL } from '../config/api';
+const API_URL = import.meta.env.VITE_API_URL || `${BASE_URL}/api`;
 
 const getHeaders = () => {
   const token = localStorage.getItem('hspot_token');
