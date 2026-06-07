@@ -8,6 +8,12 @@
  * Le frontend (Vite) injecte automatiquement les variables VITE_* au build.
  * Le script MikroTik Agent utilise la même URL pour contacter le serveur.
  */
+// Production : backend hébergé sur Render
+// Override possible via VITE_BACKEND_URL dans .env (dev local)
+const RENDER_URL = 'https://mikrotik-hotspot-saas-1.onrender.com';
+
 export const BASE_URL =
   import.meta.env.VITE_BACKEND_URL ||
-  `${window.location.protocol}//${window.location.hostname}:3001`;
+  (window.location.hostname === 'localhost'
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : RENDER_URL);
