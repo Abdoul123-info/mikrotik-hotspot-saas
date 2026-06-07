@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, 
   Wallet, 
   Ticket, 
   Wifi, 
   Activity, 
-  TrendingUp, 
-  ArrowRight,
-  Clock,
+  Smartphone,
+  Copy,
+  CheckCircle2,
   CircleDollarSign
 } from 'lucide-react';
 import { 
@@ -26,6 +26,89 @@ import { useRouter } from '../contexts/RouterContext';
 import { formatCurrency } from '../utils/currency';
 import { getMonitoringSnapshot } from '../api/mikrotik.real';
 import { calculateMikhmonStats } from '../utils/sales';
+
+// ── Mini QR Code generator (no external lib) ─────────────────────────
+// Uses the `qrcode` package already present in package.json via dynamic import
+function MobileQRPanel() {
+  const [qrSvg, setQrSvg] = useState('');
+  const [appUrl, setAppUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const url = window.location.origin;
+    setAppUrl(url);
+    // Dynamically import qrcode (already in deps) to generate SVG
+    import('qrcode').then(QRCode => {
+      QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#00E5A0', light: '#00000000' } })
+        .then(svg => setQrSvg(svg))
+        .catch(() => setQrSvg(''));
+    }).catch(() => setQrSvg(''));
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(appUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="neon-card p-6 flex flex-col">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+            <Smartphone size={18} className="text-primary" />
+          </div>
+          <div>
+            <h3 className="text-sm font-heading font-black tracking-widest text-white/80 uppercase">Accès Mobile</h3>
+            <p className="text-[10px] text-white/30 mt-0.5">Scanner avec un téléphone</p>
+          </div>
+        </div>
+        <div className="pulse-green" title="URL Live" />
+      </div>
+
+      {/* QR Code */}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="relative group">
+          <div className="w-36 h-36 rounded-2xl bg-black/40 border border-primary/20 p-3 flex items-center justify-center overflow-hidden shadow-[0_0_40px_rgba(0,229,160,0.15)]">
+            {qrSvg ? (
+              <div
+                dangerouslySetInnerHTML={{ __html: qrSvg }}
+                className="w-full h-full [&_svg]:w-full [&_svg]:h-full"
+              />
+            ) : (
+              <div className="w-full h-full rounded-xl bg-white/5 animate-pulse" />
+            )}
+          </div>
+          {/* Corner accents */}
+          <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-primary rounded-tl-md" />
+          <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-primary rounded-tr-md" />
+          <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-primary rounded-bl-md" />
+          <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-primary rounded-br-md" />
+        </div>
+      </div>
+
+      {/* URL + copy */}
+      <div className="mt-6 space-y-3">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10">
+          <p className="text-[10px] font-mono text-white/50 flex-1 truncate">{appUrl || '...'}</p>
+          <button
+            onClick={handleCopy}
+            className="shrink-0 p-1.5 rounded-lg hover:bg-white/10 transition-all"
+            title="Copier l'URL"
+          >
+            {copied
+              ? <CheckCircle2 size={14} className="text-primary" />
+              : <Copy size={14} className="text-white/40" />}
+          </button>
+        </div>
+        <p className="text-[10px] text-white/20 text-center leading-relaxed">
+          Scanne ce QR Code pour ouvrir l'app sur ton téléphone depuis le même réseau.
+        </p>
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────
 
 function DashboardPage() {
   const { settings } = useSettings();
@@ -132,8 +215,8 @@ function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Bandwidth Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+        {/* Bandwidth Chart - spans 2 cols */}
         <div className="lg:col-span-2 glass-card p-6">
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
@@ -207,49 +290,57 @@ function DashboardPage() {
           </div>
         </div>
 
-        {/* Real-time Status */}
-        <div className="neon-card p-6">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-lg font-heading font-black tracking-widest text-white/80">Système</h3>
-            {activeRouter && <div className="pulse-green" title="Connexion Live" />}
+        {/* Real-time Status + Mobile QR — stacked in the right column */}
+        <div className="flex flex-col gap-6">
+
+          {/* System status card */}
+          <div className="neon-card p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-sm font-heading font-black tracking-widest text-white/80 uppercase">Système</h3>
+              {activeRouter && <div className="pulse-green" title="Connexion Live" />}
+            </div>
+
+            <div className="space-y-6 relative">
+              <div className="scanner-line" />
+              
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Charge CPU</span>
+                  <span className="text-sm font-black text-primary font-mono">{bandwidthData[bandwidthData.length-1]?.cpu || 0}%</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                  <div 
+                    className="h-full bg-primary shadow-[0_0_15px_rgba(0,229,160,0.5)] transition-all duration-1000" 
+                    style={{ width: `${bandwidthData[bandwidthData.length-1]?.cpu || 0}%` }} 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between items-end">
+                  <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Mémoire Vive</span>
+                  <span className="text-sm font-black text-secondary font-mono">{bandwidthData[bandwidthData.length-1]?.ram || 0}%</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                  <div 
+                    className="h-full bg-secondary shadow-[0_0_15px_rgba(0,102,255,0.5)] transition-all duration-1000" 
+                    style={{ width: `${bandwidthData[bandwidthData.length-1]?.ram || 0}%` }} 
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between text-[9px] uppercase font-bold text-white/20">
+                  <span>Dernière télémétrie</span>
+                  <span className="text-primary/60 font-mono">{bandwidthData[bandwidthData.length-1]?.time || 'En attente...'}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-8 relative">
-            <div className="scanner-line" />
-            
-            <div className="space-y-3">
-              <div className="flex justify-between items-end">
-                <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Charge CPU</span>
-                <span className="text-sm font-black text-primary font-mono">{bandwidthData[bandwidthData.length-1]?.cpu || 0}%</span>
-              </div>
-              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                <div 
-                  className="h-full bg-primary shadow-[0_0_15px_rgba(0,229,160,0.5)] transition-all duration-1000" 
-                  style={{ width: `${bandwidthData[bandwidthData.length-1]?.cpu || 0}%` }} 
-                />
-              </div>
-            </div>
+          {/* Mobile QR Code panel */}
+          <MobileQRPanel />
 
-            <div className="space-y-3">
-              <div className="flex justify-between items-end">
-                <span className="text-[10px] text-white/30 uppercase font-black tracking-tighter">Mémoire Vive</span>
-                <span className="text-sm font-black text-secondary font-mono">{bandwidthData[bandwidthData.length-1]?.ram || 0}%</span>
-              </div>
-              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                <div 
-                  className="h-full bg-secondary shadow-[0_0_15px_rgba(0,102,255,0.5)] transition-all duration-1000" 
-                  style={{ width: `${bandwidthData[bandwidthData.length-1]?.ram || 0}%` }} 
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 mt-4 border-t border-white/5">
-              <div className="flex items-center justify-between text-[9px] uppercase font-bold text-white/20">
-                <span>Dernière télémétrie</span>
-                <span className="text-primary/60 font-mono">{bandwidthData[bandwidthData.length-1]?.time || 'En attente...'}</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
