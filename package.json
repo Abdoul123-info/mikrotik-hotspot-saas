@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "vite",
     "backend": "node backend/server.js",
-    "start": "node mikrotik-proxy.js",
+    "start": "node backend/server.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
