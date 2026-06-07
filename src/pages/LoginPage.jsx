@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn, UserPlus, Mail, Lock, Loader2, Router, QrCode, Wifi } from 'lucide-react';
 import { auth } from '../config/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { BASE_URL } from '../config/api';
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,22 +12,22 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
-  const [networkInfo, setNetworkInfo] = useState(null);
+  const [qrSvg, setQrSvg] = useState('');
+  const [appUrl, setAppUrl] = useState('');
 
+  // Generate QR Code entirely client-side — no backend call needed
   useEffect(() => {
-    async function fetchNetworkInfo() {
-      try {
-        const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
-        const response = await fetch(`${BASE_URL}/api/network-info?port=${currentPort}`);
-        if (response.ok) {
-          const data = await response.json();
-          setNetworkInfo(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch network info", err);
-      }
-    }
-    fetchNetworkInfo();
+    const url = window.location.origin;
+    setAppUrl(url);
+    import('qrcode').then(QRCode => {
+      QRCode.toString(url, {
+        type: 'svg',
+        margin: 1,
+        color: { dark: '#00E5A0', light: '#00000000' }
+      })
+        .then(svg => setQrSvg(svg))
+        .catch(() => {});
+    }).catch(() => {});
   }, []);
 
   async function handleSubmit(e) {
@@ -170,51 +169,60 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Right Side: QR Code Network Panel */}
-        {networkInfo && networkInfo.qrCode && (
-          <div className="max-w-sm w-full neon-card p-8 backdrop-blur-3xl flex flex-col items-center text-center">
-            <div className="scanner-line"></div>
-            
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary p-[2px] shadow-2xl shadow-primary/20 mb-6">
-              <div className="w-full h-full bg-bg-dark rounded-[calc(1rem-2px)] flex items-center justify-center">
-                <Wifi className="w-8 h-8 text-primary animate-pulse" />
-              </div>
-            </div>
-
-            <h2 className="text-2xl font-bold text-white tracking-tighter mb-2 font-heading uppercase">
-              Accès <span className="text-primary">Mobile</span>
-            </h2>
-            <p className="text-white/40 text-xs font-medium tracking-wider uppercase mb-6">
-              Scannez pour vous connecter
-            </p>
-
-            <div className="relative p-3 bg-white rounded-2xl shadow-2xl shadow-primary/10 transition-transform duration-500 hover:scale-105 mb-6">
-              <img 
-                src={networkInfo.qrCode} 
-                alt="Accès mobile QR Code" 
-                className="w-40 h-40 rounded-lg select-none"
-              />
-            </div>
-
-            <div className="space-y-4 w-full">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <span className="text-[10px] font-black text-white/40 uppercase tracking-widest block mb-1">
-                  Adresse IP Locale
-                </span>
-                <span className="text-sm font-bold text-white font-mono selection:bg-primary selection:text-bg-dark">
-                  http://{networkInfo.ip}:{networkInfo.port}
-                </span>
-              </div>
-
-              <div className="flex items-start gap-2.5 text-left bg-primary/5 border border-primary/20 p-4 rounded-2xl text-[10px] leading-relaxed text-white/70 font-medium uppercase tracking-wider">
-                <QrCode className="w-4 h-4 shrink-0 text-primary mt-0.5" />
-                <span>
-                  Connectez votre téléphone au même réseau Wi-Fi, puis scannez ce code QR pour ouvrir l'application.
-                </span>
-              </div>
+        {/* Right Side: QR Code Network Panel — 100% client-side, no backend call */}
+        <div className="max-w-sm w-full neon-card p-8 backdrop-blur-3xl flex flex-col items-center text-center">
+          <div className="scanner-line"></div>
+          
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary p-[2px] shadow-2xl shadow-primary/20 mb-6">
+            <div className="w-full h-full bg-bg-dark rounded-[calc(1rem-2px)] flex items-center justify-center">
+              <Wifi className="w-8 h-8 text-primary animate-pulse" />
             </div>
           </div>
-        )}
+
+          <h2 className="text-2xl font-bold text-white tracking-tighter mb-2 font-heading uppercase">
+            Accès <span className="text-primary">Mobile</span>
+          </h2>
+          <p className="text-white/40 text-xs font-medium tracking-wider uppercase mb-6">
+            Scannez pour vous connecter
+          </p>
+
+          {/* QR Code SVG with corner accents */}
+          <div className="relative mb-6 group">
+            <div className="w-44 h-44 rounded-2xl bg-black/40 border border-primary/20 p-3 flex items-center justify-center overflow-hidden shadow-[0_0_40px_rgba(0,229,160,0.15)] transition-transform duration-500 hover:scale-105">
+              {qrSvg ? (
+                <div
+                  dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  className="w-full h-full [&_svg]:w-full [&_svg]:h-full"
+                />
+              ) : (
+                <div className="w-full h-full rounded-xl bg-white/5 animate-pulse" />
+              )}
+            </div>
+            {/* Corner accents */}
+            <div className="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-primary rounded-tl-md" />
+            <div className="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-primary rounded-tr-md" />
+            <div className="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-primary rounded-bl-md" />
+            <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-primary rounded-br-md" />
+          </div>
+
+          <div className="space-y-4 w-full">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+              <span className="text-[10px] font-black text-white/40 uppercase tracking-widest block mb-1">
+                URL de l'Application
+              </span>
+              <span className="text-sm font-bold text-white font-mono selection:bg-primary selection:text-bg-dark break-all">
+                {appUrl || '...'}
+              </span>
+            </div>
+
+            <div className="flex items-start gap-2.5 text-left bg-primary/5 border border-primary/20 p-4 rounded-2xl text-[10px] leading-relaxed text-white/70 font-medium uppercase tracking-wider">
+              <QrCode className="w-4 h-4 shrink-0 text-primary mt-0.5" />
+              <span>
+                Scannez ce code QR avec votre téléphone pour ouvrir l'application.
+              </span>
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>
