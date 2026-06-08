@@ -365,7 +365,7 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
           await adminDb.collection('routers').doc(routerId).collection('commands').add({
             endpoint,
             method,
-            data: cleanData || {},
+            data: data || {},
             status: 'pending',
             createdAt: new Date().toISOString()
           });
@@ -389,6 +389,10 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
               }));
             }
             else if (endpoint.includes('/resource')) cachedResult = agentData.systemResource || {};
+            else if (endpoint.includes('/monitor-traffic')) {
+              // Pas de données de trafic en temps réel via agent — retourner des zéros
+              cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
+            }
             
             if (cachedResult !== undefined) {
               console.log(`✅ [AGENT CACHE] ${endpoint} depuis cache (${Math.round(syncAge/1000)}s)`);
