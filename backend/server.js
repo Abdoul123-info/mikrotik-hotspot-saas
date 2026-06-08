@@ -271,6 +271,57 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé à ce routeur.' });
     }
 
+    // 📡 [AGENT PUSH DIRECT FALLBACK]
+    // Si le routeur est configuré en mode Agent (CGNAT/NAT), on ne tente jamais de connexion directe TCP
+    if (router.agentKey) {
+      if (isReadOperation) {
+        const agentData = router.agentData || {};
+        const syncAge = agentData.lastSync ? Date.now() - new Date(agentData.lastSync).getTime() : null;
+        
+        let cachedResult;
+        if (endpoint.includes('/active')) {
+          cachedResult = (agentData.activeUsers || []).map(u => ({
+            ...u,
+            '.id': u.user
+          }));
+        } else if (endpoint.includes('/resource')) {
+          cachedResult = agentData.systemResource || {};
+        } else if (endpoint.includes('/monitor-traffic')) {
+          cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
+        } else if (endpoint.includes('/user/profile')) {
+          cachedResult = [];
+        } else if (endpoint.includes('/user')) {
+          cachedResult = [];
+        } else if (endpoint.includes('/script')) {
+          cachedResult = [];
+        } else {
+          cachedResult = [];
+        }
+
+        console.log(`✅ [AGENT CACHE DIRECT] ${endpoint} (syncAge: ${syncAge !== null ? Math.round(syncAge/1000) + 's' : 'never'})`);
+        res.setHeader('X-Data-Source', 'agent-cache');
+        if (syncAge !== null) {
+          res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
+        }
+        return res.status(200).json(cachedResult);
+      } else {
+        // Opération d'écriture : mettre directement en file d'attente
+        console.log(`📥 [QUEUING DIRECT] Mise en file d'attente de la commande ${method} ${endpoint} pour le routeur ${routerId}`);
+        await adminDb.collection('routers').doc(routerId).collection('commands').add({
+          endpoint,
+          method,
+          data: data || {},
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        });
+        return res.status(200).json({
+          success: true,
+          queued: true,
+          message: "Le routeur est actuellement injoignable (NAT/CGNAT). La commande a été mise en file d'attente et sera exécutée dès que le routeur se synchronisera (environ 1 min)."
+        });
+      }
+    }
+
     const apiPort = parseInt(router.port) || 8728;
     console.log(`📡 [User:${req.user.userId}] API:${apiPort} ${method || 'GET'} ${endpoint} @ ${router.ip}`);
 
