@@ -466,11 +466,17 @@ app.get('/api/agent/pending-script/:routerId', async (req, res) => {
     const commandsSnap = await adminDb.collection('routers').doc(routerId)
       .collection('commands')
       .where('status', '==', 'pending')
-      .orderBy('createdAt', 'asc')
-      .limit(10)
       .get();
 
-    if (commandsSnap.empty) {
+    let sortedDocs = commandsSnap.docs;
+    sortedDocs.sort((a, b) => {
+      const aTime = a.data().createdAt || '';
+      const bTime = b.data().createdAt || '';
+      return aTime.localeCompare(bTime);
+    });
+    sortedDocs = sortedDocs.slice(0, 10);
+
+    if (sortedDocs.length === 0) {
       return res.type('text/plain').send('# pas de commandes en attente\n');
     }
 
@@ -492,7 +498,7 @@ app.get('/api/agent/pending-script/:routerId', async (req, res) => {
     // Utiliser BACKEND_URL si défini (prod), sinon l'IP locale (réseau local)
     const callbackHost = BACKEND_URL || `http://${localIp}:${PORT}`;
 
-    for (const doc of commandsSnap.docs) {
+    for (const doc of sortedDocs) {
       const cmdData = doc.data();
       const commandId = doc.id;
       
@@ -544,11 +550,17 @@ app.post('/api/agent/push', async (req, res) => {
     const commandsSnap = await adminDb.collection('routers').doc(routerId)
       .collection('commands')
       .where('status', '==', 'pending')
-      .orderBy('createdAt', 'asc')
-      .limit(5)
       .get();
 
-    const commands = commandsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let sortedDocs = commandsSnap.docs;
+    sortedDocs.sort((a, b) => {
+      const aTime = a.data().createdAt || '';
+      const bTime = b.data().createdAt || '';
+      return aTime.localeCompare(bTime);
+    });
+    sortedDocs = sortedDocs.slice(0, 5);
+
+    const commands = sortedDocs.map(d => ({ id: d.id, ...d.data() }));
     console.log(`📥 [AGENT] ${routerId} → ${(activeUsers || []).length} actifs`);
     res.json({ success: true, commands });
   } catch (err) {
