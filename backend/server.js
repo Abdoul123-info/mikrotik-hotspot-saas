@@ -289,11 +289,15 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
         } else if (endpoint.includes('/monitor-traffic')) {
           cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
         } else if (endpoint.includes('/user/profile')) {
-          cachedResult = [];
+          cachedResult = agentData.userProfiles || [];
         } else if (endpoint.includes('/user')) {
-          cachedResult = [];
+          cachedResult = agentData.hotspotUsers || [];
         } else if (endpoint.includes('/script')) {
-          cachedResult = [];
+          cachedResult = agentData.mikhmonSales || [];
+        } else if (endpoint.includes('/dhcp-server/lease')) {
+          cachedResult = agentData.dhcpLeases || [];
+        } else if (endpoint.includes('/hotspot/server')) {
+          cachedResult = agentData.hotspotServers || [];
         } else {
           cachedResult = [];
         }
@@ -444,6 +448,11 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
               // Pas de données de trafic en temps réel via agent — retourner des zéros
               cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
             }
+            else if (endpoint.includes('/user/profile')) cachedResult = agentData.userProfiles || [];
+            else if (endpoint.includes('/user')) cachedResult = agentData.hotspotUsers || [];
+            else if (endpoint.includes('/script')) cachedResult = agentData.mikhmonSales || [];
+            else if (endpoint.includes('/dhcp-server/lease')) cachedResult = agentData.dhcpLeases || [];
+            else if (endpoint.includes('/hotspot/server')) cachedResult = agentData.hotspotServers || [];
             
             if (cachedResult !== undefined) {
               console.log(`✅ [AGENT CACHE] ${endpoint} depuis cache (${Math.round(syncAge/1000)}s)`);
@@ -601,7 +610,7 @@ app.get('/api/agent/pending-script/:routerId', async (req, res) => {
 
 // Réception des données poussées par MikroTik
 app.post('/api/agent/push', async (req, res) => {
-  const { routerId, agentKey, activeUsers, resource } = req.body;
+  const { routerId, agentKey, activeUsers, resource, userProfiles, hotspotUsers, mikhmonSales, hotspotServers, dhcpLeases } = req.body;
   if (!routerId || !agentKey) return res.status(400).json({ error: 'routerId et agentKey requis.' });
 
   try {
@@ -618,6 +627,11 @@ app.post('/api/agent/push', async (req, res) => {
     await adminDb.collection('routers').doc(routerId).update({
       'agentData.activeUsers': activeUsers || [],
       'agentData.systemResource': normalizedResource,
+      'agentData.userProfiles': userProfiles || [],
+      'agentData.hotspotUsers': hotspotUsers || [],
+      'agentData.mikhmonSales': mikhmonSales || [],
+      'agentData.hotspotServers': hotspotServers || [],
+      'agentData.dhcpLeases': dhcpLeases || [],
       'agentData.lastSync': new Date().toISOString(),
     });
 

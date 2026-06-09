@@ -9,6 +9,7 @@ import {
   addDoc, 
   deleteDoc, 
   doc, 
+  updateDoc,
   serverTimestamp 
 } from 'firebase/firestore';
 
@@ -75,6 +76,19 @@ export function RouterProvider({ children }) {
     }
   };
 
+  const updateRouter = async (id, routerData) => {
+    try {
+      await updateDoc(doc(db, 'routers', id), {
+        ...routerData,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (err) {
+      console.error('Failed to update router', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   const removeRouter = async (id) => {
     try {
       await deleteDoc(doc(db, 'routers', id));
@@ -93,6 +107,7 @@ export function RouterProvider({ children }) {
       activeRouter, 
       setActiveRouterId, 
       addRouter, 
+      updateRouter,
       removeRouter
     }}>
       {children}

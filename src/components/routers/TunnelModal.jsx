@@ -75,7 +75,120 @@ function TunnelModal({ isOpen, onClose, router }) {
   }
 }
 
-:local json "{\\"routerId\\":\\"$routerId\\",\\"agentKey\\":\\"$agentKey\\",\\"activeUsers\\": [$activeUsersList], \\"resource\\":{\\"cpuLoad\\":$cpuLoad, \\"freeMemory\\":$freeMemory, \\"totalMemory\\":$totalMemory, \\"uptime\\":\\"$uptime\\"}}"
+:local profilesList ""
+:foreach i in=[/ip hotspot user profile find] do={
+  :local pId [/ip hotspot user profile get $i .id]
+  :local pName [/ip hotspot user profile get $i name]
+  :local pComment [/ip hotspot user profile get $i comment]
+  :local pSessTimeout [/ip hotspot user profile get $i session-timeout]
+  :local pLimitBytes [/ip hotspot user profile get $i limit-bytes-total]
+  :local pOnLogin [/ip hotspot user profile get $i on-login]
+  
+  :local pObj "{\\".id\\":\\"$pId\\", \\"name\\":\\"$pName\\", \\"comment\\":\\"$pComment\\", \\"session-timeout\\":\\"$pSessTimeout\\", \\"limit-bytes-total\\":\\"$pLimitBytes\\", \\"on-login\\":\\"$pOnLogin\\"}"
+  :if ([:len $profilesList] > 0) do={
+    :set profilesList "$profilesList, $pObj"
+  } else={
+    :set profilesList $pObj
+  }
+}
+
+:local usersList ""
+:local users [/ip hotspot user find]
+:local usersLen [:len $users]
+:if ($usersLen > 0) do={
+  :local startIdx ($usersLen - 1)
+  :local endIdx ($usersLen - 300)
+  :if ($endIdx < 0) do={ :set endIdx 0 }
+  :for idx from=$startIdx to=$endIdx step=-1 do={
+    :local i [:pick $users $idx]
+    :local uId [/ip hotspot user get $i .id]
+    :local uName [/ip hotspot user get $i name]
+    :local uPassword [/ip hotspot user get $i password]
+    :local uProfile [/ip hotspot user get $i profile]
+    :local uComment [/ip hotspot user get $i comment]
+    :local uUptime [/ip hotspot user get $i uptime]
+    :local uBytesIn [/ip hotspot user get $i bytes-in]
+    :local uBytesOut [/ip hotspot user get $i bytes-out]
+    :local uLimitUptime [/ip hotspot user get $i limit-uptime]
+    :local uLimitBytes [/ip hotspot user get $i limit-bytes-total]
+    :local uDisabled [/ip hotspot user get $i disabled]
+
+    :local uDisStr "false"
+    :if ($uDisabled = true) do={ :set uDisStr "true" }
+
+    :local uObj "{\\".id\\":\\"$uId\\", \\"name\\":\\"$uName\\", \\"password\\":\\"$uPassword\\", \\"profile\\":\\"$uProfile\\", \\"comment\\":\\"$uComment\\", \\"uptime\\":\\"$uUptime\\", \\"bytes-in\\":\\"$uBytesIn\\", \\"bytes-out\\":\\"$uBytesOut\\", \\"limit-uptime\\":\\"$uLimitUptime\\", \\"limit-bytes-total\\":\\"$uLimitBytes\\", \\"disabled\\":$uDisStr}"
+    :if ([:len $usersList] > 0) do={
+      :set usersList "$usersList, $uObj"
+    } else={
+      :set usersList $uObj
+    }
+  }
+}
+
+:local salesList ""
+:local sales [/system script find comment="mikhmon"]
+:local salesLen [:len $sales]
+:if ($salesLen > 0) do={
+  :local startIdx ($salesLen - 1)
+  :local endIdx ($salesLen - 150)
+  :if ($endIdx < 0) do={ :set endIdx 0 }
+  :for idx from=$startIdx to=$endIdx step=-1 do={
+    :local i [:pick $sales $idx]
+    :local sId [/system script get $i .id]
+    :local sName [/system script get $i name]
+    :local sComment [/system script get $i comment]
+    :local sSource [/system script get $i source]
+    
+    :local sObj "{\\".id\\":\\"$sId\\", \\"name\\":\\"$sName\\", \\"comment\\":\\"$sComment\\", \\"source\\":\\"$sSource\\"}"
+    :if ([:len $salesList] > 0) do={
+      :set salesList "$salesList, $sObj"
+    } else={
+      :set salesList $sObj
+    }
+  }
+}
+
+:local serversList ""
+:foreach i in=[/ip hotspot server find] do={
+  :local sId [/ip hotspot server get $i .id]
+  :local sName [/ip hotspot server get $i name]
+  :local sProfile [/ip hotspot server get $i profile]
+  
+  :local sObj "{\\".id\\":\\"$sId\\", \\"name\\":\\"$sName\\", \\"profile\\":\\"$sProfile\\"}"
+  :if ([:len $serversList] > 0) do={
+    :set serversList "$serversList, $sObj"
+  } else={
+    :set serversList $sObj
+  }
+}
+
+:local leasesList ""
+:local leases [/ip dhcp-server/lease find]
+:local leasesLen [:len $leases]
+:if ($leasesLen > 0) do={
+  :local startIdx ($leasesLen - 1)
+  :local endIdx ($leasesLen - 100)
+  :if ($endIdx < 0) do={ :set endIdx 0 }
+  :for idx from=$startIdx to=$endIdx step=-1 do={
+    :local i [:pick $leases $idx]
+    :local lId [/ip dhcp-server/lease get $i .id]
+    :local lAddress [/ip dhcp-server/lease get $i address]
+    :local lMac [/ip dhcp-server/lease get $i mac-address]
+    :local lHost [/ip dhcp-server/lease get $i host-name]
+    :local lStatus [/ip dhcp-server/lease get $i status]
+    :local lComment [/ip dhcp-server/lease get $i comment]
+    :local lLastSeen [/ip dhcp-server/lease get $i last-seen]
+    
+    :local lObj "{\\".id\\":\\"$lId\\", \\"address\\":\\"$lAddress\\", \\"mac-address\\":\\"$lMac\\", \\"host-name\\":\\"$lHost\\", \\"status\\":\\"$lStatus\\", \\"comment\\":\\"$lComment\\", \\"last-seen\\":\\"$lLastSeen\\"}"
+    :if ([:len $leasesList] > 0) do={
+      :set leasesList "$leasesList, $lObj"
+    } else={
+      :set leasesList $lObj
+    }
+  }
+}
+
+:local json "{\\"routerId\\":\\"$routerId\\",\\"agentKey\\":\\"$agentKey\\",\\"activeUsers\\":[$activeUsersList],\\"userProfiles\\":[$profilesList],\\"hotspotUsers\\":[$usersList],\\"mikhmonSales\\":[$salesList],\\"hotspotServers\\":[$serversList],\\"dhcpLeases\\":[$leasesList],\\"resource\\":{\\"cpuLoad\\":$cpuLoad,\\"freeMemory\\":$freeMemory,\\"totalMemory\\":$totalMemory,\\"uptime\\":\\"$uptime\\"}}"
 
 # 1. Envoyer les statistiques au serveur
 :do {
