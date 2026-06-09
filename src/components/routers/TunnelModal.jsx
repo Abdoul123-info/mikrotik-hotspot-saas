@@ -58,6 +58,7 @@ function TunnelModal({ isOpen, onClose, router }) {
 
 :local cpuLoad [/system resource get cpu-load]
 :local freeMemory [/system resource get free-memory]
+:local totalMemory [/system resource get total-memory]
 :local uptime [/system resource get uptime]
 
 :local activeUsersList ""
@@ -74,7 +75,7 @@ function TunnelModal({ isOpen, onClose, router }) {
   }
 }
 
-:local json "{\\"routerId\\":\\"$routerId\\",\\"agentKey\\":\\"$agentKey\\",\\"activeUsers\\": [$activeUsersList], \\"resource\\":{\\"cpuLoad\\":$cpuLoad, \\"freeMemory\\":$freeMemory, \\"uptime\\":\\"$uptime\\"}}"
+:local json "{\\"routerId\\":\\"$routerId\\",\\"agentKey\\":\\"$agentKey\\",\\"activeUsers\\": [$activeUsersList], \\"resource\\":{\\"cpuLoad\\":$cpuLoad, \\"freeMemory\\":$freeMemory, \\"totalMemory\\":$totalMemory, \\"uptime\\":\\"$uptime\\"}}"
 
 # 1. Envoyer les statistiques au serveur
 :do {

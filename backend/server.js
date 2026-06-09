@@ -477,6 +477,26 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
 // 🤖 Push Agent API (MikroTik → Render → Firestore)
 // ──────────────────────────────────────────────
 
+/**
+ * Normalise les champs resource envoyés par le script MikroTik (camelCase)
+ * en champs kebab-case attendus par le frontend (RouterOS standard).
+ * Ex: cpuLoad → cpu-load, freeMemory → free-memory, totalMemory → total-memory
+ */
+function normalizeResource(resource) {
+  if (!resource || typeof resource !== 'object') return {};
+  return {
+    'cpu-load':     resource['cpu-load']     ?? resource['cpuLoad']     ?? 0,
+    'free-memory':  resource['free-memory']  ?? resource['freeMemory']  ?? 0,
+    'total-memory': resource['total-memory'] ?? resource['totalMemory'] ?? 0,
+    'uptime':       resource['uptime']       ?? resource['upTime']      ?? '',
+    'version':      resource['version']      ?? '',
+    'board-name':   resource['board-name']   ?? resource['boardName']   ?? '',
+    'platform':     resource['platform']     ?? '',
+    'cpu-count':    resource['cpu-count']    ?? resource['cpuCount']    ?? 1,
+    'cpu-frequency':resource['cpu-frequency']?? resource['cpuFrequency']?? 0,
+  };
+}
+
 // Obtenir/générer la clé agent d'un routeur
 app.get('/api/agent/key/:routerId', requireAuth, async (req, res) => {
   const { routerId } = req.params;
@@ -590,9 +610,14 @@ app.post('/api/agent/push', async (req, res) => {
     const router = routerDoc.data();
     if (router.agentKey !== agentKey) return res.status(403).json({ error: 'Clé agent invalide.' });
 
+    // 🔧 Normaliser camelCase → kebab-case (le script MikroTik envoie cpuLoad, freeMemory, etc.)
+    const normalizedResource = normalizeResource(resource);
+    console.log(`📊 [AGENT PUSH] Resource reçue:`, JSON.stringify(resource));
+    console.log(`📊 [AGENT PUSH] Resource normalisée:`, JSON.stringify(normalizedResource));
+
     await adminDb.collection('routers').doc(routerId).update({
       'agentData.activeUsers': activeUsers || [],
-      'agentData.systemResource': resource || {},
+      'agentData.systemResource': normalizedResource,
       'agentData.lastSync': new Date().toISOString(),
     });
 
