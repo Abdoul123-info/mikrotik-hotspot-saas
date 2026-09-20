@@ -14,22 +14,97 @@ const formatBytes = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
-const parseUptimeToSeconds = (uptime) => {
-  if (!uptime) return 0;
-  let total = 0;
-  const d = uptime.match(/(\d+)d/); if (d) total += parseInt(d[1]) * 86400;
-  const h = uptime.match(/(\d+)h/); if (h) total += parseInt(h[1]) * 3600;
-  const m = uptime.match(/(\d+)m/); if (m) total += parseInt(m[1]) * 60;
-  const s = uptime.match(/(\d+)s/); if (s) total += parseInt(s[1]);
-  return total;
+const parseUptimeToSeconds = (timeStr) => {
+  if (!timeStr || typeof timeStr !== 'string') {
+    if (typeof timeStr === 'number') return timeStr;
+    return 0;
+  }
+  const str = timeStr.trim();
+  if (!str || str === '---' || str === 'none') return 0;
+
+  // Pattern 1: Hybrid format with days and colons, e.g. "6d18:41:39" or "1d04:15:20"
+  const dayColonMatch = str.match(/^(\d+)d\s*(\d{1,2}):(\d{2}):(\d{2})$/i);
+  if (dayColonMatch) {
+    const days = parseInt(dayColonMatch[1], 10);
+    const hours = parseInt(dayColonMatch[2], 10);
+    const minutes = parseInt(dayColonMatch[3], 10);
+    const seconds = parseInt(dayColonMatch[4], 10);
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds;
+  }
+
+  // Pattern 2: Pure colon format "HH:MM:SS" or "D:HH:MM:SS"
+  const colonParts = str.split(':');
+  if (colonParts.length === 3 && colonParts.every(p => /^\d+$/.test(p.trim()))) {
+    const h = parseInt(colonParts[0], 10);
+    const m = parseInt(colonParts[1], 10);
+    const s = parseInt(colonParts[2], 10);
+    return h * 3600 + m * 60 + s;
+  }
+  if (colonParts.length === 4 && colonParts.every(p => /^\d+$/.test(p.trim()))) {
+    const d = parseInt(colonParts[0], 10);
+    const h = parseInt(colonParts[1], 10);
+    const m = parseInt(colonParts[2], 10);
+    const s = parseInt(colonParts[3], 10);
+    return d * 86400 + h * 3600 + m * 60 + s;
+  }
+  if (colonParts.length === 2 && colonParts.every(p => /^\d+$/.test(p.trim()))) {
+    const m = parseInt(colonParts[0], 10);
+    const s = parseInt(colonParts[1], 10);
+    return m * 60 + s;
+  }
+
+  // Pattern 3: Standard MikroTik format with unit letters: w, d, h, m, s
+  let totalSeconds = 0;
+  let matchedUnit = false;
+  const w = str.match(/(\d+)\s*w/i); if (w) { totalSeconds += parseInt(w[1], 10) * 604800; matchedUnit = true; }
+  const d = str.match(/(\d+)\s*d/i); if (d) { totalSeconds += parseInt(d[1], 10) * 86400; matchedUnit = true; }
+  const h = str.match(/(\d+)\s*h/i); if (h) { totalSeconds += parseInt(h[1], 10) * 3600; matchedUnit = true; }
+  const m = str.match(/(\d+)\s*m(?!s)/i); if (m) { totalSeconds += parseInt(m[1], 10) * 60; matchedUnit = true; }
+  const s = str.match(/(\d+)\s*s/i); if (s) { totalSeconds += parseInt(s[1], 10); matchedUnit = true; }
+
+  if (matchedUnit) return totalSeconds;
+
+  const num = parseInt(str, 10);
+  return isNaN(num) ? 0 : num;
 };
 
 const formatSeconds = (secs) => {
   if (!secs || secs <= 0) return '---';
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+
+  const days = Math.floor(secs / 86400);
+  const remainingAfterDays = secs % 86400;
+  const hours = Math.floor(remainingAfterDays / 3600);
+  const remainingAfterHours = remainingAfterDays % 3600;
+  const minutes = Math.floor(remainingAfterHours / 60);
+  const seconds = remainingAfterHours % 60;
+
+  // Mois (30 jours et plus)
+  if (days >= 30) {
+    const months = Math.floor(days / 30);
+    const remDays = days % 30;
+    if (remDays > 0) return `${months} mois ${remDays}j`;
+    return `${months} mois`;
+  }
+
+  // Jours + Heures (ex: 6j 18h, 3j 5h, 1j)
+  if (days > 0) {
+    if (hours > 0) return `${days}j ${hours}h`;
+    if (minutes > 0) return `${days}j ${minutes}m`;
+    return `${days}j`;
+  }
+
+  // Heures + Minutes (ex: 10h 22m, 3h 16m)
+  if (hours > 0) {
+    if (minutes > 0) return `${hours}h ${minutes}m`;
+    return `${hours}h`;
+  }
+
+  // Minutes
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return `${seconds}s`;
 };
 
 const getTimePercent = (sessionTimeLeft, uptime) => {
@@ -49,6 +124,9 @@ function TimeBar({ sessionTimeLeft, uptime }) {
     <span className="text-[10px] text-white/20 font-mono italic">Illimité</span>
   );
   const leftSecs = parseUptimeToSeconds(sessionTimeLeft);
+  if (leftSecs <= 0) return (
+    <span className="text-[10px] text-white/20 font-mono italic">Illimité</span>
+  );
   const pct = getTimePercent(sessionTimeLeft, uptime);
   const color = pct > 50 ? 'bg-primary' : pct > 20 ? 'bg-orange-400' : 'bg-red-500';
   const textColor = pct > 50 ? 'text-primary' : pct > 20 ? 'text-orange-400' : 'text-red-400';

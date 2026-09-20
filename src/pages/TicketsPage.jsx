@@ -27,6 +27,7 @@ function TicketsPage() {
   const [search, setSearch] = useState('');
   const [isPrinting, setIsPrinting] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
+  const [displayLimit, setDisplayLimit] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -521,18 +522,46 @@ function TicketsPage() {
         </div>
       </div>
 
-      {/* ── Result count ── */}
-      <div className="flex items-center justify-between px-1">
-        <p className="text-[10px] text-white/20 uppercase font-black tracking-widest">
-          {isFiltering
-            ? `${filteredVouchers.length} résultat(s)`
-            : `${filteredVouchers.length} tickets${filteredVouchers.length > 100 ? ' (affichage: 100)' : ''}`
-          }
-        </p>
-        {profileTab !== 'all' && (
-          <p className="text-[10px] text-primary/60 uppercase font-black tracking-widest">
-            Profil : {profileTab}
+      {/* ── Result count & Display selector ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[10px] text-white/40 uppercase font-black tracking-widest">
+            {filteredVouchers.length} ticket(s) {filteredVouchers.length > displayLimit ? `(affichés : ${Math.min(displayLimit, filteredVouchers.length)})` : ''}
           </p>
+          {profileTab !== 'all' && (
+            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-primary/20 text-primary font-black uppercase tracking-wider border border-primary/30">
+              Profil : {profileTab}
+            </span>
+          )}
+        </div>
+
+        {filteredVouchers.length > 50 && (
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/40">
+            <span>Afficher :</span>
+            {[50, 100, 250, 500].map(n => (
+              <button
+                key={n}
+                onClick={() => setDisplayLimit(n)}
+                className={`px-2 py-1 rounded-lg transition-all ${
+                  displayLimit === n
+                    ? 'bg-primary text-black font-black shadow-md shadow-primary/20'
+                    : 'bg-white/5 hover:bg-white/10 text-white/60'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setDisplayLimit(filteredVouchers.length)}
+              className={`px-2 py-1 rounded-lg transition-all ${
+                displayLimit >= filteredVouchers.length
+                  ? 'bg-primary text-black font-black shadow-md shadow-primary/20'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              }`}
+            >
+              Tous ({filteredVouchers.length})
+            </button>
+          </div>
         )}
       </div>
 
@@ -544,7 +573,7 @@ function TicketsPage() {
             <p className="text-white/40 uppercase text-xs font-bold tracking-widest">Synchronisation avec MikroTik...</p>
           </div>
         ) : (
-          (isFiltering ? filteredVouchers : filteredVouchers.slice(0, 100)).map(v => (
+          filteredVouchers.slice(0, displayLimit).map(v => (
             <VoucherCard 
               key={v.id} 
               voucher={v} 
@@ -553,6 +582,23 @@ function TicketsPage() {
               onUnblock={handleUnblock}
             />
           ))
+        )}
+
+        {!isLoading && filteredVouchers.length > displayLimit && (
+          <div className="col-span-full flex flex-col sm:flex-row items-center justify-center gap-3 pt-6 pb-4">
+            <button
+              onClick={() => setDisplayLimit(prev => Math.min(prev + 100, filteredVouchers.length))}
+              className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all shadow-lg"
+            >
+              Afficher plus (+100)
+            </button>
+            <button
+              onClick={() => setDisplayLimit(filteredVouchers.length)}
+              className="px-6 py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 rounded-xl text-xs font-black uppercase tracking-wider text-primary transition-all shadow-lg"
+            >
+              Tout afficher ({filteredVouchers.length} tickets)
+            </button>
+          </div>
         )}
 
         {!isLoading && filteredVouchers.length === 0 && (

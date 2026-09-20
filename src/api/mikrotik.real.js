@@ -430,22 +430,23 @@ export const blockHotspotUser = async (router, usernameOrId, block = true, sessi
 
 /**
  * Returns full list of active hotspot sessions with rich fields.
+ * Handles both direct RouterOS data and agent-cached data (which may have fewer fields).
  */
 export const getFullActiveUsers = async (router) => {
   try {
     const list = await callRouter(router, '/ip/hotspot/active');
     if (!Array.isArray(list)) return [];
     return list.map(u => ({
-      id: u['.id'],
+      id: u['.id'] || u.user || '',
       user: u.user || u.name || '',
       address: u.address || '',
       macAddress: u['mac-address'] || '',
-      hostname: u.host || u.comment || '',
+      hostname: u.host || u['host-name'] || u.comment || '',
       uptime: u.uptime || '0s',
-      idleTime: u['idle-time'] || '',
-      sessionTimeLeft: u['session-time-left'] || '',
-      bytesIn: parseInt(u['bytes-in'] || 0),
-      bytesOut: parseInt(u['bytes-out'] || 0),
+      idleTime: u['idle-time'] || u['idle_time'] || '',
+      sessionTimeLeft: u['session-time-left'] || u['session_time_left'] || '',
+      bytesIn: parseInt(u['bytes-in'] || u['bytesIn'] || 0),
+      bytesOut: parseInt(u['bytes-out'] || u['bytesOut'] || 0),
       profile: u.profile || '',
       server: u.server || '',
     }));
