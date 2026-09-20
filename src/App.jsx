@@ -37,7 +37,7 @@ function App() {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <Topbar />
         
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 pb-24 md:pb-8">
           <Suspense fallback={
             <div className="flex items-center justify-center h-full">
               <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>

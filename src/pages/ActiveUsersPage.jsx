@@ -476,39 +476,39 @@ function ActiveUsersPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-extrabold text-white flex items-center gap-3">
-            <Wifi className="text-primary animate-pulse" />
+          <h1 className="text-xl md:text-3xl font-heading font-extrabold text-white flex items-center gap-2 md:gap-3">
+            <Wifi className="text-primary animate-pulse w-5 h-5 md:w-7 md:h-7" />
             Utilisateurs Actifs
           </h1>
-          <p className="text-white/40 font-body mt-1 text-sm">
+          <p className="text-white/40 font-body mt-0.5 md:mt-1 text-xs md:text-sm">
             Surveillance temps réel · {activeRouter?.name || '---'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="px-4 py-2 bg-white/5 rounded-xl border border-white/10 flex items-center gap-2">
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="px-3 py-1.5 md:px-4 md:py-2 bg-white/5 rounded-xl border border-white/10 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-xs font-mono text-white/50">MàJ: {lastUpdated.toLocaleTimeString()}</span>
+            <span className="text-[11px] md:text-xs font-mono text-white/50">MàJ: {lastUpdated.toLocaleTimeString()}</span>
           </div>
-          <button onClick={fetchData} className="p-3 bg-white/5 hover:bg-primary/10 border border-white/10 hover:border-primary/30 rounded-xl transition-all text-white/60 hover:text-primary">
-            <RefreshCcw size={18} className={loading ? 'animate-spin' : ''} />
+          <button onClick={fetchData} className="p-2 md:p-3 bg-white/5 hover:bg-primary/10 border border-white/10 hover:border-primary/30 rounded-xl transition-all text-white/60 hover:text-primary">
+            <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3">
         {/* Connectés */}
-        <div className="neon-card p-4">
+        <div className="neon-card p-3.5 md:p-4">
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Connectés</p>
-          <p className="text-3xl font-heading font-black text-white">{activeUsers.length}</p>
+          <p className="text-xl sm:text-2xl md:text-3xl font-heading font-black text-white">{activeUsers.length}</p>
         </div>
 
         {/* Zombies */}
-        <div className={`neon-card p-4 ${zombies > 0 ? 'border-blue-500/30' : ''}`}>
+        <div className={`neon-card p-3.5 md:p-4 ${zombies > 0 ? 'border-blue-500/30' : ''}`}>
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">💤 Zombies</p>
-          <p className={`text-3xl font-heading font-black ${zombies > 0 ? 'text-blue-400' : 'text-white'}`}>{zombies}</p>
+          <p className={`text-xl sm:text-2xl md:text-3xl font-heading font-black ${zombies > 0 ? 'text-blue-400' : 'text-white'}`}>{zombies}</p>
         </div>
 
         {/* 📱 Mobiles vs 💻 PC vs ❓ Autre */}

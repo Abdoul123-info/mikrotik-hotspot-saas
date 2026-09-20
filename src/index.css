@@ -37,18 +37,18 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-heading uppercase tracking-tight;
-    text-shadow: 0 0 20px rgba(0, 229, 160, 0.1);
+    @apply font-heading tracking-tight;
+    text-shadow: 0 0 16px rgba(0, 229, 160, 0.08);
   }
 }
 
 @layer components {
   .glass-card {
-    @apply bg-white/[0.03] backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl relative overflow-hidden;
+    @apply bg-white/[0.03] backdrop-blur-2xl border border-white/10 rounded-xl sm:rounded-2xl shadow-2xl relative overflow-hidden;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.82);
   }
   .neon-card {
-    @apply bg-white/[0.03] backdrop-blur-2xl border border-primary/20 rounded-2xl relative overflow-hidden;
+    @apply bg-white/[0.03] backdrop-blur-2xl border border-primary/20 rounded-xl sm:rounded-2xl relative overflow-hidden;
     box-shadow: 0 0 20px rgba(0, 229, 160, 0.05), 0 8px 32px 0 rgba(0, 0, 0, 0.82);
   }
   .neon-card:hover {
@@ -60,13 +60,13 @@
     @apply hover:bg-white/[0.07] hover:border-white/20 transition-all duration-500;
   }
   .btn-primary {
-    @apply bg-[#00E5A0] hover:bg-[#00FFAF] text-[#07090D] font-black px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#00E5A0]/20 cursor-pointer uppercase tracking-wider text-xs;
+    @apply bg-[#00E5A0] hover:bg-[#00FFAF] text-[#07090D] font-black px-4 py-2 sm:px-6 sm:py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#00E5A0]/20 cursor-pointer uppercase tracking-wider text-[11px] sm:text-xs;
   }
   .btn-secondary {
-    @apply bg-[#0066FF] hover:bg-[#0055DD] text-white font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#0066FF]/20 cursor-pointer;
+    @apply bg-[#0066FF] hover:bg-[#0055DD] text-white font-bold px-4 py-2 sm:px-6 sm:py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#0066FF]/20 cursor-pointer text-xs;
   }
   .btn-accent {
-    @apply bg-[#FF6B35] hover:bg-[#EE5A24] text-white font-bold px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#FF6B35]/20 cursor-pointer;
+    @apply bg-[#FF6B35] hover:bg-[#EE5A24] text-white font-bold px-4 py-2 sm:px-6 sm:py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-[#FF6B35]/20 cursor-pointer text-xs;
   }
   
   /* Status Animations */

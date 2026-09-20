@@ -274,21 +274,21 @@ function SalesPage() {
     <div className="space-y-6 animate-in fade-in duration-700">
 
       {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
         <div>
-          <h1 className="text-3xl font-heading font-extrabold text-white">Ventes</h1>
-          <p className="text-white/40 font-body">
+          <h1 className="text-xl md:text-3xl font-heading font-extrabold text-white">Ventes</h1>
+          <p className="text-xs md:text-sm text-white/40 font-body mt-0.5">
             Synchronisé avec MikroTik
             {lastSync && <span className="ml-2 text-primary/40">· {lastSync.toLocaleTimeString()}</span>}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={fetchData} className="h-12 px-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 flex items-center gap-2 text-white/60 hover:text-white transition-all text-sm font-bold uppercase">
-            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+        <div className="flex items-center gap-2 md:gap-3">
+          <button onClick={fetchData} className="h-9 md:h-12 px-3 md:px-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 flex items-center gap-2 text-white/60 hover:text-white transition-all text-xs md:text-sm font-bold uppercase">
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">Actualiser</span>
           </button>
-          <button className="h-12 px-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 flex items-center gap-2 text-white/60 hover:text-white transition-all text-sm font-bold uppercase">
-            <Download size={16} />
+          <button className="h-9 md:h-12 px-3 md:px-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 flex items-center gap-2 text-white/60 hover:text-white transition-all text-xs md:text-sm font-bold uppercase">
+            <Download size={14} />
             <span className="hidden sm:inline">Exporter CSV</span>
           </button>
         </div>
