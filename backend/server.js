@@ -280,9 +280,17 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
         
         let cachedResult;
         if (endpoint.includes('/active')) {
+          const leases = agentData.dhcpLeases || [];
+          const leaseMap = new Map();
+          leases.forEach(l => {
+            if (l && l['mac-address']) leaseMap.set(l['mac-address'].toLowerCase(), l['host-name']);
+            if (l && l.address) leaseMap.set(l.address, l['host-name']);
+          });
+
           cachedResult = (agentData.activeUsers || []).map(u => ({
             ...u,
-            '.id': u.user
+            '.id': u.user,
+            host: leaseMap.get((u['mac-address'] || '').toLowerCase()) || leaseMap.get(u.address) || ''
           }));
         } else if (endpoint.includes('/resource')) {
           cachedResult = agentData.systemResource || {};
@@ -437,10 +445,17 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
           if (syncAge < 300000) { // Cache valide jusqu'à 5 minutes
             let cachedResult;
             if (endpoint.includes('/active')) {
-              // Populer le champ .id avec le nom d'utilisateur pour pouvoir déconnecter plus tard via CLI
+              const leases = agentData.dhcpLeases || [];
+              const leaseMap = new Map();
+              leases.forEach(l => {
+                if (l && l['mac-address']) leaseMap.set(l['mac-address'].toLowerCase(), l['host-name']);
+                if (l && l.address) leaseMap.set(l.address, l['host-name']);
+              });
+
               cachedResult = (agentData.activeUsers || []).map(u => ({
                 ...u,
-                '.id': u.user
+                '.id': u.user,
+                host: leaseMap.get((u['mac-address'] || '').toLowerCase()) || leaseMap.get(u.address) || ''
               }));
             }
             else if (endpoint.includes('/resource')) cachedResult = agentData.systemResource || {};

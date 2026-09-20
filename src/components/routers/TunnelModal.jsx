@@ -66,7 +66,12 @@ function TunnelModal({ isOpen, onClose, router }) {
   :local uMac [/ip hotspot active get $i mac-address]
   :local uIp [/ip hotspot active get $i address]
   :local uUptime [/ip hotspot active get $i uptime]
-  :local uObj "{\\"user\\":\\"$uName\\", \\"mac-address\\":\\"$uMac\\", \\"address\\":\\"$uIp\\", \\"uptime\\":\\"$uUptime\\"}"
+  :local uBytesIn [/ip hotspot active get $i bytes-in]
+  :local uBytesOut [/ip hotspot active get $i bytes-out]
+  :local uTimeLeft [/ip hotspot active get $i session-time-left]
+  :local uIdleTime [/ip hotspot active get $i idle-time]
+  :local uServer [/ip hotspot active get $i server]
+  :local uObj "{\\"user\\":\\"$uName\\", \\"mac-address\\":\\"$uMac\\", \\"address\\":\\"$uIp\\", \\"uptime\\":\\"$uUptime\\", \\"bytes-in\\":\\"$uBytesIn\\", \\"bytes-out\\":\\"$uBytesOut\\", \\"session-time-left\\":\\"$uTimeLeft\\", \\"idle-time\\":\\"$uIdleTime\\", \\"server\\":\\"$uServer\\"}"
   :if ([:len $activeUsersList] > 0) do={ 
     :set activeUsersList "$activeUsersList, $uObj" 
   } else={ 
