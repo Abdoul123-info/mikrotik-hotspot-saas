@@ -45,10 +45,9 @@ function TunnelModal({ isOpen, onClose, router }) {
 
   if (!isOpen || !router) return null;
 
-  // Remplacer BASE_URL par l'URL publique de votre backend (ex: https://mon-serveur.render.com)
-  // Si BASE_URL pointe vers localhost, le routeur ne pourra pas s'y connecter.
+  // Si BASE_URL pointe vers localhost, utiliser l'URL publique de Render pour le script MikroTik
   const backendHost = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1') 
-      ? 'http://VOTRE_IP_PUBLIQUE:3001' 
+      ? 'https://mikrotik-hotspot-saas-1.onrender.com' 
       : BASE_URL;
 
   const scriptContent = `:local agentKey "${agentKey}"
