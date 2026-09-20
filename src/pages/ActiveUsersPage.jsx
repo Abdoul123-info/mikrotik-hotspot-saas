@@ -500,48 +500,49 @@ function ActiveUsersPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3">
         {/* Connectés */}
-        <div className="neon-card p-3.5 md:p-4">
+        <div className="neon-card p-3 sm:p-4">
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">Connectés</p>
           <p className="text-xl sm:text-2xl md:text-3xl font-heading font-black text-white">{activeUsers.length}</p>
         </div>
 
         {/* Zombies */}
-        <div className={`neon-card p-3.5 md:p-4 ${zombies > 0 ? 'border-blue-500/30' : ''}`}>
+        <div className={`neon-card p-3 sm:p-4 ${zombies > 0 ? 'border-blue-500/30' : ''}`}>
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">💤 Zombies</p>
           <p className={`text-xl sm:text-2xl md:text-3xl font-heading font-black ${zombies > 0 ? 'text-blue-400' : 'text-white'}`}>{zombies}</p>
         </div>
 
         {/* 📱 Mobiles vs 💻 PC vs ❓ Autre */}
-        <div className="neon-card p-4">
-          <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-2">Appareils</p>
-          <div className="flex items-center gap-3">
-            <div className="text-center">
-              <p className="text-2xl font-heading font-black text-primary">{mobileCount}</p>
-              <p className="text-[9px] text-primary/60 font-black flex items-center gap-1 justify-center">
-                <Smartphone size={9} /> Mobile
+        <div className="neon-card p-2.5 sm:p-3 md:p-4 flex flex-col justify-between">
+          <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1 sm:mb-1.5">Appareils</p>
+          <div className="grid grid-cols-3 divide-x divide-white/10 text-center items-center">
+            <div className="pr-1">
+              <p className="text-base sm:text-xl md:text-2xl font-heading font-black text-primary leading-tight">{mobileCount}</p>
+              <p className="text-[8px] sm:text-[9px] text-primary/70 font-bold flex items-center justify-center gap-0.5 mt-0.5">
+                <Smartphone size={8} className="shrink-0" />
+                <span>Mobile</span>
               </p>
             </div>
-            <div className="w-px h-8 bg-white/10" />
-            <div className="text-center">
-              <p className="text-2xl font-heading font-black text-blue-400">{pcCount}</p>
-              <p className="text-[9px] text-blue-400/60 font-black flex items-center gap-1 justify-center">
-                <Monitor size={9} /> PC
+            <div className="px-1">
+              <p className="text-base sm:text-xl md:text-2xl font-heading font-black text-blue-400 leading-tight">{pcCount}</p>
+              <p className="text-[8px] sm:text-[9px] text-blue-400/70 font-bold flex items-center justify-center gap-0.5 mt-0.5">
+                <Monitor size={8} className="shrink-0" />
+                <span>PC</span>
               </p>
             </div>
-            <div className="w-px h-8 bg-white/10" />
-            <div className="text-center">
-              <p className="text-2xl font-heading font-black text-white/40">{otherCount}</p>
-              <p className="text-[9px] text-white/40 font-black flex items-center gap-1 justify-center">
-                <HelpCircle size={9} /> Autre
+            <div className="pl-1">
+              <p className="text-base sm:text-xl md:text-2xl font-heading font-black text-white/50 leading-tight">{otherCount}</p>
+              <p className="text-[8px] sm:text-[9px] text-white/50 font-bold flex items-center justify-center gap-0.5 mt-0.5">
+                <HelpCircle size={8} className="shrink-0" />
+                <span>Autre</span>
               </p>
             </div>
           </div>
         </div>
 
         {/* Download total */}
-        <div className="neon-card p-4">
+        <div className="neon-card p-3 sm:p-4">
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-1">⬇ Download total</p>
-          <p className="text-xl font-heading font-black text-white">{formatBytes(totalDownload)}</p>
+          <p className="text-base sm:text-xl md:text-2xl font-heading font-black text-white truncate">{formatBytes(totalDownload)}</p>
         </div>
       </div>
 
