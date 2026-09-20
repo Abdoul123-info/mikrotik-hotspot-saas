@@ -624,14 +624,39 @@ app.post('/api/agent/push', async (req, res) => {
     console.log(`📊 [AGENT PUSH] Resource reçue:`, JSON.stringify(resource));
     console.log(`📊 [AGENT PUSH] Resource normalisée:`, JSON.stringify(normalizedResource));
 
+    // 🔧 Fusionner les ventes et les utilisateurs avec le cache existant pour préserver l'historique
+    const existingAgent = router.agentData || {};
+
+    let mergedSales = existingAgent.mikhmonSales || [];
+    if (Array.isArray(mikhmonSales) && mikhmonSales.length > 0) {
+      const salesMap = new Map();
+      mergedSales.forEach(s => { if (s && s.name) salesMap.set(s.name, s); });
+      mikhmonSales.forEach(s => { if (s && s.name) salesMap.set(s.name, s); });
+      mergedSales = Array.from(salesMap.values());
+      if (mergedSales.length > 2500) {
+        mergedSales = mergedSales.slice(-2500);
+      }
+    }
+
+    let mergedUsers = existingAgent.hotspotUsers || [];
+    if (Array.isArray(hotspotUsers) && hotspotUsers.length > 0) {
+      const usersMap = new Map();
+      mergedUsers.forEach(u => { if (u && u.name) usersMap.set(u.name, u); });
+      hotspotUsers.forEach(u => { if (u && u.name) usersMap.set(u.name, u); });
+      mergedUsers = Array.from(usersMap.values());
+      if (mergedUsers.length > 600) {
+        mergedUsers = mergedUsers.slice(-600);
+      }
+    }
+
     await adminDb.collection('routers').doc(routerId).update({
       'agentData.activeUsers': activeUsers || [],
       'agentData.systemResource': normalizedResource,
-      'agentData.userProfiles': userProfiles || [],
-      'agentData.hotspotUsers': hotspotUsers || [],
-      'agentData.mikhmonSales': mikhmonSales || [],
-      'agentData.hotspotServers': hotspotServers || [],
-      'agentData.dhcpLeases': dhcpLeases || [],
+      'agentData.userProfiles': (userProfiles && userProfiles.length > 0) ? userProfiles : (existingAgent.userProfiles || []),
+      'agentData.hotspotUsers': mergedUsers,
+      'agentData.mikhmonSales': mergedSales,
+      'agentData.hotspotServers': (hotspotServers && hotspotServers.length > 0) ? hotspotServers : (existingAgent.hotspotServers || []),
+      'agentData.dhcpLeases': (dhcpLeases && dhcpLeases.length > 0) ? dhcpLeases : (existingAgent.dhcpLeases || []),
       'agentData.lastSync': new Date().toISOString(),
     });
 

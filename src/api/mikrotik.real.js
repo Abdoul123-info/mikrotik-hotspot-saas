@@ -128,6 +128,15 @@ export const getVoucherProfiles = async (router) => {
       if (price === 0 && comment.match(/^\d+$/)) {
         price = parseInt(comment);
       }
+
+      // 4. Intelligent Name Matching (e.g., "100F-5H", "200H-12H", "500F-3JRS", "SEMAINE-1000F", "MOIS-3000F")
+      if (price === 0 && p.name) {
+        const nameMatch = p.name.match(/(\d+)\s*(?:f|fcfa|cfa|fr|h|jrs|d)?/i);
+        if (nameMatch) {
+          const val = parseInt(nameMatch[1]);
+          if (val >= 25) price = val;
+        }
+      }
       
       return {
         id: p['.id'],
