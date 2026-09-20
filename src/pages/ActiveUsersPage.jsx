@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from '../contexts/RouterContext';
 import { getFullActiveUsers, disconnectActiveUser, blockHotspotUser, getHotspotUserDetails, getVoucherProfiles } from '../api/mikrotik.real';
 import { detectDevice } from '../utils/deviceDetect';
-import { UserMinus, RefreshCcw, Wifi, Clock, Search, ShieldOff, Shield, X, HardDrive, Layers, Zap, Moon, AlertTriangle, Smartphone, Monitor, Eye } from 'lucide-react';
+import { UserMinus, RefreshCcw, Wifi, Clock, Search, ShieldOff, Shield, X, HardDrive, Layers, Zap, Moon, AlertTriangle, Smartphone, Monitor, Eye, HelpCircle } from 'lucide-react';
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 
@@ -147,30 +147,38 @@ function TimeBar({ sessionTimeLeft, uptime }) {
   );
 }
 
-// ─── Badge appareil (Mobile / PC) ────────────────────────────────────────────
+// ─── Badge appareil (Mobile / PC / Autre) ────────────────────────────────────
 
-function DeviceBadge({ hostname, macAddress, size = 'sm' }) {
-  const dev = detectDevice(hostname, macAddress);
-  if (dev.type === 'unknown') return null;
+function DeviceBadge({ hostname, macAddress, username, size = 'sm' }) {
+  const dev = detectDevice(hostname, macAddress, username);
 
   const isMobile = dev.type === 'mobile';
-  const bg = isMobile ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+  const isPC = dev.type === 'pc';
+  const bg = isMobile 
+    ? 'bg-primary/10 border-primary/20 text-primary' 
+    : isPC 
+      ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' 
+      : 'bg-white/5 border-white/10 text-white/40';
+
+  const Icon = isMobile ? Smartphone : isPC ? Monitor : HelpCircle;
 
   if (size === 'lg') {
     return (
       <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${bg}`}>
-        {isMobile ? <Smartphone size={16} /> : <Monitor size={16} />}
+        <Icon size={16} />
         <div>
           <p className="text-xs font-black">{dev.label}</p>
-          {hostname && <p className="text-[9px] opacity-60 font-mono truncate max-w-[120px]">{hostname}</p>}
+          {(hostname || username) && (
+            <p className="text-[9px] opacity-60 font-mono truncate max-w-[140px]">{hostname || username}</p>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[9px] font-black uppercase tracking-wide ${bg}`}>
-      {isMobile ? <Smartphone size={9} /> : <Monitor size={9} />}
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border text-[10px] font-black uppercase tracking-wide ${bg}`}>
+      <Icon size={11} />
       {dev.label}
     </span>
   );
@@ -275,7 +283,7 @@ function UserDetailsPanel({ user, router, onClose, onBlock }) {
           <>
             {/* Appareil détecté — affiché en haut, bien visible */}
             <div className="flex items-center gap-3">
-              <DeviceBadge hostname={user.hostname} macAddress={user.macAddress} size="lg" />
+              <DeviceBadge hostname={user.hostname} macAddress={user.macAddress} username={user.user} size="lg" />
               <StatusBadges user={user} />
             </div>
 
@@ -413,9 +421,10 @@ function ActiveUsersPage() {
   const zombies = activeUsers.filter(u => getIdleSecs(u.idleTime) > 600).length;
   const totalDownload = activeUsers.reduce((acc, u) => acc + u.bytesOut, 0); // Utilise bytesOut pour le Download
 
-  // Comptage Mobile / PC par hostname+MAC
-  const mobileCount = activeUsers.filter(u => detectDevice(u.hostname, u.macAddress).type === 'mobile').length;
-  const pcCount     = activeUsers.filter(u => detectDevice(u.hostname, u.macAddress).type === 'pc').length;
+  // Comptage Mobile / PC / Autre par hostname+MAC+user
+  const mobileCount = activeUsers.filter(u => detectDevice(u.hostname, u.macAddress, u.user).type === 'mobile').length;
+  const pcCount     = activeUsers.filter(u => detectDevice(u.hostname, u.macAddress, u.user).type === 'pc').length;
+  const otherCount  = activeUsers.length - mobileCount - pcCount;
 
   // ── Filtrage Catégories + Profil + Tri (Mémorisé) ──
   const filtered = useMemo(() => {
@@ -502,7 +511,7 @@ function ActiveUsersPage() {
           <p className={`text-3xl font-heading font-black ${zombies > 0 ? 'text-blue-400' : 'text-white'}`}>{zombies}</p>
         </div>
 
-        {/* 📱 Mobiles vs 💻 PC */}
+        {/* 📱 Mobiles vs 💻 PC vs ❓ Autre */}
         <div className="neon-card p-4">
           <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-2">Appareils</p>
           <div className="flex items-center gap-3">
@@ -517,6 +526,13 @@ function ActiveUsersPage() {
               <p className="text-2xl font-heading font-black text-blue-400">{pcCount}</p>
               <p className="text-[9px] text-blue-400/60 font-black flex items-center gap-1 justify-center">
                 <Monitor size={9} /> PC
+              </p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div className="text-center">
+              <p className="text-2xl font-heading font-black text-white/40">{otherCount}</p>
+              <p className="text-[9px] text-white/40 font-black flex items-center gap-1 justify-center">
+                <HelpCircle size={9} /> Autre
               </p>
             </div>
           </div>
@@ -602,7 +618,7 @@ function ActiveUsersPage() {
                   const totalBytes = user.bytesIn + user.bytesOut;
                   const uptimeSecs = parseUptimeToSeconds(user.uptime);
                   const avgMbps = uptimeSecs > 60 ? (totalBytes * 8) / uptimeSecs / 1_000_000 : 0;
-                  const dev = detectDevice(user.hostname, user.macAddress);
+                  const dev = detectDevice(user.hostname, user.macAddress, user.user);
 
                   return (
                     <tr key={user.user}
@@ -630,21 +646,11 @@ function ActiveUsersPage() {
                         </div>
                       </td>
 
-                      {/* Appareil : 📱 Mobile ou 💻 PC */}
+                      {/* Appareil : 📱 Mobile, 💻 PC ou ❓ Autre */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        {dev.type === 'unknown' ? (
-                          <span className="text-[9px] text-white/15 font-mono">---</span>
-                        ) : (
-                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-black
-                            ${dev.type === 'mobile'
-                              ? 'bg-primary/10 border-primary/20 text-primary'
-                              : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
-                            {dev.type === 'mobile' ? <Smartphone size={12} /> : <Monitor size={12} />}
-                            {dev.label}
-                          </div>
-                        )}
+                        <DeviceBadge hostname={user.hostname} macAddress={user.macAddress} username={user.user} />
                         {user.hostname && (
-                          <p className="text-[9px] text-white/20 font-mono mt-0.5 max-w-[100px] truncate">{user.hostname}</p>
+                          <p className="text-[9px] text-white/30 font-mono mt-1 max-w-[120px] truncate" title={user.hostname}>{user.hostname}</p>
                         )}
                       </td>
 
