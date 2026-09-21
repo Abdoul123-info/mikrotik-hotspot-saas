@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Terminal, Copy, CheckCircle2, Server, ShieldAlert } from 'lucide-react';
+import { 
+  X, Terminal, Copy, CheckCircle2, Server, ShieldAlert, 
+  Zap, Loader2, Sparkles, AlertCircle, ChevronDown, ChevronUp 
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BASE_URL } from '../../config/api';
 
@@ -8,15 +11,30 @@ function TunnelModal({ isOpen, onClose, router }) {
   const [agentKey, setAgentKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedOneLiner, setCopiedOneLiner] = useState(false);
   const [error, setError] = useState('');
+  
+  // États d'injection automatique
+  const [injecting, setInjecting] = useState(false);
+  const [injectSuccess, setInjectSuccess] = useState(null);
+  const [injectError, setInjectError] = useState(null);
+  const [injectTip, setInjectTip] = useState(null);
+  const [showFullScript, setShowFullScript] = useState(false);
 
   useEffect(() => {
     if (isOpen && router) {
       fetchAgentKey();
+      setInjectSuccess(null);
+      setInjectError(null);
+      setInjectTip(null);
     } else {
       setAgentKey('');
       setCopied(false);
+      setCopiedOneLiner(false);
       setError('');
+      setInjectSuccess(null);
+      setInjectError(null);
+      setInjectTip(null);
     }
   }, [isOpen, router]);
 
@@ -37,10 +55,46 @@ function TunnelModal({ isOpen, onClose, router }) {
     }
   };
 
+  const handleInject = async () => {
+    try {
+      setInjecting(true);
+      setInjectSuccess(null);
+      setInjectError(null);
+      setInjectTip(null);
+
+      const res = await fetch(`${BASE_URL}/api/agent/inject/${router.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw { message: data.error || 'Erreur lors de l\'injection', tip: data.tip };
+      }
+
+      setInjectSuccess(data.message || 'Script et Scheduler installés avec succès !');
+    } catch (err) {
+      setInjectError(err.message || 'Impossible d\'injecter le script automatiquement.');
+      setInjectTip(err.tip || null);
+    } finally {
+      setInjecting(false);
+    }
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(scriptContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyOneLiner = () => {
+    navigator.clipboard.writeText(oneLinerCommand);
+    setCopiedOneLiner(true);
+    setTimeout(() => setCopiedOneLiner(false), 2000);
   };
 
   if (!isOpen || !router) return null;
@@ -49,6 +103,8 @@ function TunnelModal({ isOpen, onClose, router }) {
   const backendHost = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1') 
       ? 'https://mikrotik-hotspot-saas-1.onrender.com' 
       : BASE_URL;
+
+  const oneLinerCommand = `/tool fetch url="${backendHost}/api/agent/install-script/${router.id}?key=${agentKey}" dst-path=agent-setup.rsc; :delay 2s; /import agent-setup.rsc; /file remove agent-setup.rsc`;
 
   const scriptContent = `:local agentKey "${agentKey}"
 :local routerId "${router.id}"
@@ -249,73 +305,146 @@ function TunnelModal({ isOpen, onClose, router }) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[#0A0C10]/80 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="glass-card w-full max-w-2xl relative overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[90vh]">
-        <div className="bg-primary/10 p-6 flex items-center justify-between border-b border-primary/10 shrink-0">
+      <div className="glass-card w-full max-w-2xl relative overflow-hidden animate-in zoom-in duration-300 flex flex-col max-h-[92vh] border border-white/10 shadow-2xl">
+        {/* En-tête */}
+        <div className="bg-primary/10 p-5 flex items-center justify-between border-b border-primary/10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
-              <Terminal size={20} />
+              <Zap size={20} className="fill-primary/20" />
             </div>
-            <h3 className="text-xl font-heading font-extrabold lg:text-2xl uppercase">
-              Script Agent Push
-            </h3>
+            <div>
+              <h3 className="text-lg font-heading font-extrabold uppercase tracking-wide">
+                Agent Push MikroTik
+              </h3>
+              <p className="text-xs text-white/50 font-mono">
+                {router.name} &bull; {router.ip || 'IP non renseignée'}:{router.port || 8728}
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto space-y-6">
-          <div className="flex items-start gap-4 p-4 rounded-xl bg-primary/5 border border-primary/20">
-            <Server className="text-primary mt-1 shrink-0" size={24} />
-            <div>
-              <h4 className="font-bold text-white mb-1">À quoi sert ce script ?</h4>
-              <p className="text-sm text-white/60 leading-relaxed">
-                Si votre routeur MikroTik est derrière un NAT (ex: Starlink, 4G) ou s'il bloque les connexions entrantes, ce script permet au routeur d'envoyer lui-même ses statistiques (utilisateurs actifs, CPU) au serveur toutes les minutes.
-              </p>
-            </div>
-          </div>
+        <div className="p-6 overflow-y-auto space-y-5">
+          {/* Bloc 1 : Injection 1-Clic (Recommandé) */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/30 relative overflow-hidden shadow-lg">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-primary/20 text-primary uppercase tracking-wider">
+                    Recommandé
+                  </span>
+                  <h4 className="font-bold text-white text-base">Injection Automatique en 1 Clic</h4>
+                </div>
+                <p className="text-xs text-white/60 leading-relaxed max-w-md">
+                  Injecte directement le script et la tâche planifiée dans votre MikroTik via son port API ({router.port || 8728}). Zéro Winbox requis !
+                </p>
+              </div>
 
-          {error && (
-            <div className="flex items-center gap-2 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-bold">
-              <ShieldAlert size={18} />
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-heading font-bold text-sm text-white/80 uppercase tracking-widest">
-                Script à coller dans le routeur ({router.name})
-              </h4>
-              <button 
-                onClick={handleCopy}
-                disabled={loading || !agentKey}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-all text-sm font-bold disabled:opacity-50"
+              <button
+                onClick={handleInject}
+                disabled={injecting || loading || !router}
+                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-heading font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all transform active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
               >
-                {copied ? <CheckCircle2 size={16} className="text-primary" /> : <Copy size={16} />}
-                {copied ? 'Copié !' : 'Copier'}
+                {injecting ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Injection en cours...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap size={18} className="fill-white" />
+                    <span>⚡ Injecter maintenant</span>
+                  </>
+                )}
               </button>
             </div>
-            
-            <div className="relative">
-              <pre className="p-4 rounded-xl bg-black/50 border border-white/10 text-white/70 font-mono text-xs overflow-x-auto whitespace-pre-wrap leading-relaxed">
-                {loading ? 'Génération de la clé...' : scriptContent}
-              </pre>
+
+            {/* Message de succès d'injection */}
+            {injectSuccess && (
+              <div className="mt-4 p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-emerald-200">Injection réussie !</p>
+                  <p className="text-emerald-300/90 mt-0.5">{injectSuccess}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Message d'erreur d'injection */}
+            {injectError && (
+              <div className="mt-4 p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
+                <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-red-200">{injectError}</p>
+                  {injectTip && (
+                    <p className="text-red-300/80 leading-relaxed text-[11px] bg-red-950/40 p-2 rounded-lg border border-red-500/20">
+                      💡 {injectTip}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Bloc 2 : Commande Terminal 1-Ligne (Sans ouvrir Winbox) */}
+          <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal size={16} className="text-primary" />
+                <h4 className="font-heading font-bold text-xs text-white/90 uppercase tracking-wider">
+                  Alternative : Commande Terminal en 1 ligne
+                </h4>
+              </div>
+              <button
+                onClick={handleCopyOneLiner}
+                disabled={loading || !agentKey}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 transition-all text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
+              >
+                {copiedOneLiner ? <CheckCircle2 size={14} className="text-primary" /> : <Copy size={14} />}
+                <span>{copiedOneLiner ? 'Copié !' : 'Copier la commande'}</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-white/50">
+              Collez cette unique ligne dans le terminal SSH ou WebFig de votre MikroTik. Elle télécharge, installe et lance tout automatiquement :
+            </p>
+            <div className="p-3 rounded-lg bg-black/60 border border-white/10 font-mono text-[11px] text-emerald-400 overflow-x-auto select-all whitespace-pre-wrap">
+              {loading ? 'Chargement...' : oneLinerCommand}
             </div>
           </div>
 
-          <div className="space-y-2">
-             <h4 className="font-heading font-bold text-sm text-white/80 uppercase tracking-widest">
-                Instructions
-             </h4>
-             <ul className="list-decimal list-inside text-sm text-white/60 space-y-2">
-               <li>Ouvrez Winbox ou le terminal WebFig de votre MikroTik.</li>
-               <li>Allez dans <strong>System &gt; Scripts</strong> et ajoutez un nouveau script nommé <code>agent-push</code>.</li>
-               <li>Collez le code ci-dessus dans la zone source et sauvegardez.</li>
-               <li>Allez dans <strong>System &gt; Scheduler</strong>.</li>
-               <li>Ajoutez une tâche planifiée avec l'intervalle <code>00:01:00</code> (1 minute).</li>
-               <li>Dans le champ <strong>On Event</strong>, tapez simplement <code>agent-push</code>.</li>
-             </ul>
+          {/* Bloc 3 : Accordéon pour voir le script complet */}
+          <div className="border border-white/10 rounded-xl overflow-hidden bg-white/[0.02]">
+            <button
+              onClick={() => setShowFullScript(!showFullScript)}
+              className="w-full p-3.5 flex items-center justify-between text-left text-xs font-bold text-white/70 hover:text-white transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Server size={15} className="text-white/40" />
+                <span>Voir le script complet (Installation manuelle)</span>
+              </div>
+              {showFullScript ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {showFullScript && (
+              <div className="p-4 border-t border-white/10 space-y-3 bg-black/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-white/50">Code source du script agent-push</span>
+                  <button
+                    onClick={handleCopy}
+                    disabled={loading || !agentKey}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-xs font-bold text-white/80"
+                  >
+                    {copied ? <CheckCircle2 size={14} className="text-primary" /> : <Copy size={14} />}
+                    {copied ? 'Copié !' : 'Copier'}
+                  </button>
+                </div>
+                <pre className="p-3 rounded-lg bg-black/60 border border-white/10 text-white/70 font-mono text-[10px] overflow-x-auto max-h-60 leading-relaxed whitespace-pre-wrap">
+                  {loading ? 'Génération...' : scriptContent}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       </div>
