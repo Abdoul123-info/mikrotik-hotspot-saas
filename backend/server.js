@@ -760,30 +760,57 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
 
     const scriptSource = generateAgentPushScript(routerId, agentKey, backendHost);
 
-    const ip = router.ip || router.host;
+    const { targetIp, mode } = req.body || {};
+    const localIp = router.ip || router.host;
+    const remoteIp = router.ztIp || router.remoteIp || router.vpnIp;
     const login = router.login || router.user || router.username || 'admin';
     const password = router.password || '';
-    const port = parseInt(router.port) || 8728;
+    const port = parseInt(req.body?.port || router.port) || 8728;
 
-    if (!ip) {
-      return res.status(400).json({ error: "L'adresse IP du routeur n'est pas configurée." });
+    // Déterminer la liste des IPs candidates à tester dans l'ordre approprié
+    let candidateIps = [];
+
+    if (targetIp && targetIp.trim()) {
+      candidateIps.push({ ip: targetIp.trim(), label: 'IP manuelle' });
+    } else if (mode === 'local') {
+      if (localIp) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
+      if (remoteIp && remoteIp !== localIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
+    } else if (mode === 'remote' || mode === 'vpn' || mode === 'zerotier') {
+      if (remoteIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
+      if (localIp && localIp !== remoteIp) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
+    } else {
+      // Mode Auto : tester ZeroTier/VPN d'abord (car souvent distant), puis Local
+      if (remoteIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
+      if (localIp && (!remoteIp || localIp !== remoteIp)) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
     }
 
-    console.log(`⚡ [INJECTION] Connexion vers ${ip}:${port} pour ${router.name || routerId}...`);
+    if (candidateIps.length === 0) {
+      return res.status(400).json({ error: "Aucune adresse IP (locale ou ZeroTier) n'est configurée pour ce routeur." });
+    }
 
-    let conn;
-    try {
-      conn = await getConnection(ip, login, password, port);
-    } catch (connErr) {
-      const isPrivateIp = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.)/.test(ip);
-      let tip = "Vérifiez que le service API (/ip service api) est actif sur le port 8728 du MikroTik.";
-      if (isPrivateIp) {
-        tip = `L'adresse IP (${ip}) est une IP locale privée non accessible directement depuis Internet par le Cloud. Lancez l'application Desktop locale ou utilisez la commande Terminal en 1 ligne.`;
+    let conn = null;
+    let successfulCandidate = null;
+    let failedAttempts = [];
+
+    for (const cand of candidateIps) {
+      console.log(`⚡ [INJECTION] Tentative vers ${cand.ip}:${port} (${cand.label}) pour ${router.name || routerId}...`);
+      try {
+        conn = await getConnection(cand.ip, login, password, port);
+        successfulCandidate = cand;
+        console.log(`✅ [INJECTION] Connexion établie avec succès via ${cand.ip} (${cand.label}) !`);
+        break;
+      } catch (connErr) {
+        console.warn(`⚠️ [INJECTION] Échec vers ${cand.ip}:${port} (${cand.label}) : ${connErr.message}`);
+        failedAttempts.push(`${cand.label} [${cand.ip}]: ${connErr.message}`);
       }
+    }
+
+    if (!conn) {
+      const summary = failedAttempts.join(' | ');
       return res.status(502).json({
-        error: `Impossible de joindre le MikroTik sur ${ip}:${port} (${connErr.message})`,
-        tip,
-        isPrivateIp
+        error: `Impossible de joindre le MikroTik sur le(s) adresse(s) testée(s) : ${summary}`,
+        tip: "Si vous êtes à distance, assurez-vous d'être connecté à ZeroTier/VPN et que le port 8728 est ouvert (/ip service). Si vous êtes à côté, connectez-vous au Wi-Fi du routeur.",
+        failedAttempts
       });
     }
 
@@ -836,16 +863,22 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
     }
 
     // 4. Mettre à jour Firestore
-    await adminDb.collection('routers').doc(routerId).update({
+    const firestoreUpdates = {
       agentKey,
       agentInstalled: true,
       agentInstalledAt: new Date().toISOString()
-    });
+    };
+    if (targetIp && targetIp !== localIp) {
+      firestoreUpdates.ztIp = targetIp;
+    }
+    await adminDb.collection('routers').doc(routerId).update(firestoreUpdates);
 
-    console.log(`✅ [INJECTION] Réussie pour ${router.name || routerId} !`);
+    console.log(`✅ [INJECTION] Réussie pour ${router.name || routerId} via ${successfulCandidate.label} (${successfulCandidate.ip}) !`);
     res.json({
       success: true,
-      message: `Script Agent Push et Scheduler injectés et activés avec succès sur ${router.name || 'le routeur'} !`
+      message: `Script Agent Push injecté et activé avec succès via ${successfulCandidate.label} (${successfulCandidate.ip}) !`,
+      connectedIp: successfulCandidate.ip,
+      modeUsed: successfulCandidate.label
     });
   } catch (err) {
     console.error('❌ [INJECTION ERROR]:', err);

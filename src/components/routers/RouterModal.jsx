@@ -5,6 +5,7 @@ function RouterModal({ isOpen, onClose, onSave, initialData }) {
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
+    ztIp: '',
     port: '8728',
     login: 'admin',
     password: ''
@@ -16,12 +17,13 @@ function RouterModal({ isOpen, onClose, onSave, initialData }) {
         setFormData({
           name: initialData.name || '',
           ip: initialData.ip || '',
+          ztIp: initialData.ztIp || initialData.remoteIp || '',
           port: initialData.port || '8728',
           login: initialData.login || 'admin',
           password: initialData.password || ''
         });
       } else {
-        setFormData({ name: '', ip: '', port: '8728', login: 'admin', password: '' });
+        setFormData({ name: '', ip: '', ztIp: '', port: '8728', login: 'admin', password: '' });
       }
     }
   }, [isOpen, initialData]);
@@ -71,7 +73,7 @@ function RouterModal({ isOpen, onClose, onSave, initialData }) {
 
             <div className="space-y-2">
               <label className="text-xs font-heading font-bold text-white/40 uppercase tracking-widest flex items-center gap-2">
-                <Wifi size={14} className="text-secondary" /> Adresse IP / Host
+                <Wifi size={14} className="text-secondary" /> IP Locale / LAN (À côté)
               </label>
               <input 
                 type="text" 
@@ -80,6 +82,19 @@ function RouterModal({ isOpen, onClose, onSave, initialData }) {
                 placeholder="192.168.88.1"
                 value={formData.ip}
                 onChange={(e) => setFormData({...formData, ip: e.target.value})}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-heading font-bold text-white/40 uppercase tracking-widest flex items-center gap-2">
+                <Globe size={14} className="text-emerald-400" /> IP ZeroTier / VPN (À distance)
+              </label>
+              <input 
+                type="text" 
+                className="input-glass w-full"
+                placeholder="ex: 10.147.x.x (optionnel)"
+                value={formData.ztIp}
+                onChange={(e) => setFormData({...formData, ztIp: e.target.value})}
               />
             </div>
 

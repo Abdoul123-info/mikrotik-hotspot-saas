@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Terminal, Copy, CheckCircle2, Server, ShieldAlert, 
-  Zap, Loader2, Sparkles, AlertCircle, ChevronDown, ChevronUp 
+  Zap, Loader2, Sparkles, AlertCircle, ChevronDown, ChevronUp,
+  Globe, Wifi
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BASE_URL } from '../../config/api';
@@ -14,6 +15,11 @@ function TunnelModal({ isOpen, onClose, router }) {
   const [copiedOneLiner, setCopiedOneLiner] = useState(false);
   const [error, setError] = useState('');
   
+  // Modes de connexion : 'auto' (IF test les deux), 'remote' (ZeroTier/VPN), 'local' (à côté)
+  const [connectionMode, setConnectionMode] = useState('auto');
+  const [remoteIp, setRemoteIp] = useState('');
+  const [localIp, setLocalIp] = useState('');
+
   // États d'injection automatique
   const [injecting, setInjecting] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(null);
@@ -24,6 +30,12 @@ function TunnelModal({ isOpen, onClose, router }) {
   useEffect(() => {
     if (isOpen && router) {
       fetchAgentKey();
+      const zt = router.ztIp || router.remoteIp || '';
+      const local = router.ip || '';
+      setRemoteIp(zt);
+      setLocalIp(local);
+      // Si une IP ZeroTier est présente, sélectionner 'auto' par défaut
+      setConnectionMode('auto');
       setInjectSuccess(null);
       setInjectError(null);
       setInjectTip(null);
@@ -62,12 +74,29 @@ function TunnelModal({ isOpen, onClose, router }) {
       setInjectError(null);
       setInjectTip(null);
 
+      let targetIp = null;
+      if (connectionMode === 'remote') {
+        targetIp = remoteIp ? remoteIp.trim() : null;
+        if (!targetIp) {
+          throw { message: "Veuillez renseigner l'adresse IP ZeroTier / VPN du routeur." };
+        }
+      } else if (connectionMode === 'local') {
+        targetIp = localIp ? localIp.trim() : null;
+        if (!targetIp) {
+          throw { message: "Veuillez renseigner l'adresse IP locale du routeur." };
+        }
+      }
+
       const res = await fetch(`${BASE_URL}/api/agent/inject/${router.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify({
+          mode: connectionMode,
+          targetIp: targetIp || undefined
+        })
       });
 
       const data = await res.json();
@@ -84,6 +113,8 @@ function TunnelModal({ isOpen, onClose, router }) {
       setInjecting(false);
     }
   };
+
+
 
   const handleCopy = () => {
     navigator.clipboard.writeText(scriptContent);
@@ -316,8 +347,18 @@ function TunnelModal({ isOpen, onClose, router }) {
               <h3 className="text-lg font-heading font-extrabold uppercase tracking-wide">
                 Agent Push MikroTik
               </h3>
-              <p className="text-xs text-white/50 font-mono">
-                {router.name} &bull; {router.ip || 'IP non renseignée'}:{router.port || 8728}
+              <p className="text-xs text-white/50 font-mono flex items-center gap-2 flex-wrap mt-0.5">
+                <span className="text-white/80 font-bold">{router.name}</span>
+                <span>&bull;</span>
+                <span>LAN: {router.ip || 'Non défini'}</span>
+                {(router.ztIp || router.remoteIp) && (
+                  <>
+                    <span>&bull;</span>
+                    <span className="text-emerald-400 font-semibold">ZT: {router.ztIp || router.remoteIp}</span>
+                  </>
+                )}
+                <span>&bull;</span>
+                <span>Port: {router.port || 8728}</span>
               </p>
             </div>
           </div>
@@ -327,43 +368,166 @@ function TunnelModal({ isOpen, onClose, router }) {
         </div>
 
         <div className="p-6 overflow-y-auto space-y-5">
-          {/* Bloc 1 : Injection 1-Clic (Recommandé) */}
-          <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/30 relative overflow-hidden shadow-lg">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-primary/20 text-primary uppercase tracking-wider">
-                    Recommandé
-                  </span>
-                  <h4 className="font-bold text-white text-base">Injection Automatique en 1 Clic</h4>
-                </div>
-                <p className="text-xs text-white/60 leading-relaxed max-w-md">
-                  Injecte directement le script et la tâche planifiée dans votre MikroTik via son port API ({router.port || 8728}). Zéro Winbox requis !
-                </p>
+          {/* Bloc 1 : Injection 1-Clic avec Sélecteur Local / ZeroTier */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/15 via-primary/5 to-transparent border border-primary/30 relative overflow-hidden shadow-lg space-y-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-primary/20 text-primary uppercase tracking-wider">
+                  Recommandé
+                </span>
+                <h4 className="font-bold text-white text-base">Injection Automatique en 1 Clic</h4>
+              </div>
+              <p className="text-xs text-white/60 leading-relaxed">
+                Injecte le script et la tâche planifiée dans votre MikroTik via l'API ({router.port || 8728}). 
+                Sélectionnez votre situation actuelle (à côté ou à distance) :
+              </p>
+            </div>
+
+            {/* Sélecteur de mode : Auto vs À distance (VPN) vs À côté (Local) */}
+            <div className="bg-black/40 p-3.5 rounded-xl border border-white/10 space-y-3">
+              <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider block">
+                Où êtes-vous par rapport au routeur ?
+              </span>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode('auto')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    connectionMode === 'auto'
+                      ? 'bg-primary/20 border-primary text-white shadow-sm ring-1 ring-primary/40'
+                      : 'bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Zap size={14} className={connectionMode === 'auto' ? 'text-primary' : 'text-white/40'} />
+                    <span className="text-xs font-bold">Auto (IF)</span>
+                  </div>
+                  <p className="text-[10px] text-white/40 leading-snug">
+                    Teste ZeroTier puis Réseau Local automatiquement
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode('remote')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    connectionMode === 'remote'
+                      ? 'bg-emerald-500/20 border-emerald-500 text-white shadow-sm ring-1 ring-emerald-500/40'
+                      : 'bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Globe size={14} className={connectionMode === 'remote' ? 'text-emerald-400' : 'text-white/40'} />
+                    <span className="text-xs font-bold">À distance (VPN)</span>
+                  </div>
+                  <p className="text-[10px] text-white/40 leading-snug">
+                    Via ZeroTier / WireGuard / IP Distante
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectionMode('local')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    connectionMode === 'local'
+                      ? 'bg-blue-500/20 border-blue-500 text-white shadow-sm ring-1 ring-blue-500/40'
+                      : 'bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Wifi size={14} className={connectionMode === 'local' ? 'text-blue-400' : 'text-white/40'} />
+                    <span className="text-xs font-bold">À côté (Local)</span>
+                  </div>
+                  <p className="text-[10px] text-white/40 leading-snug">
+                    Connecté au même Wi-Fi ou câble LAN
+                  </p>
+                </button>
               </div>
 
-              <button
-                onClick={handleInject}
-                disabled={injecting || loading || !router}
-                className="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-heading font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all transform active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                {injecting ? (
-                  <>
-                    <Loader2 size={18} className="animate-spin" />
-                    <span>Injection en cours...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap size={18} className="fill-white" />
-                    <span>⚡ Injecter maintenant</span>
-                  </>
-                )}
-              </button>
+              {/* Champ d'IP si mode Distant (ZeroTier / VPN) sélectionné */}
+              {connectionMode === 'remote' && (
+                <div className="pt-2.5 border-t border-white/10 animate-in fade-in duration-200">
+                  <label className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                    <Globe size={13} />
+                    Adresse IP ZeroTier / VPN du routeur :
+                  </label>
+                  <input
+                    type="text"
+                    className="input-glass w-full text-xs font-mono py-2"
+                    placeholder="ex: 10.147.x.x (IP ZeroTier)"
+                    value={remoteIp}
+                    onChange={(e) => setRemoteIp(e.target.value)}
+                  />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    💡 Assurez-vous que votre PC/Appareil actuel est également connecté au même réseau ZeroTier/VPN.
+                  </p>
+                </div>
+              )}
+
+              {/* Champ d'IP si mode Local sélectionné */}
+              {connectionMode === 'local' && (
+                <div className="pt-2.5 border-t border-white/10 animate-in fade-in duration-200">
+                  <label className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                    <Wifi size={13} />
+                    Adresse IP Locale du routeur :
+                  </label>
+                  <input
+                    type="text"
+                    className="input-glass w-full text-xs font-mono py-2"
+                    placeholder="ex: 192.168.88.1"
+                    value={localIp}
+                    onChange={(e) => setLocalIp(e.target.value)}
+                  />
+                  <p className="text-[10px] text-white/40 mt-1">
+                    💡 Votre appareil doit être connecté au même Wi-Fi ou switch réseau que le MikroTik.
+                  </p>
+                </div>
+              )}
+
+              {/* Résumé de l'ordre de test en mode Auto */}
+              {connectionMode === 'auto' && (
+                <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                  <span>Ordre de tentative :</span>
+                  {remoteIp ? (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                      1. ZeroTier: {remoteIp}
+                    </span>
+                  ) : null}
+                  <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-300 font-mono text-[10px]">
+                    {remoteIp ? '2. Local: ' : '1. Local: '}{localIp || '192.168.88.1'}
+                  </span>
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={handleInject}
+              disabled={injecting || loading || !router}
+              className="w-full px-5 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-heading font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all transform active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {injecting ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Connexion & Injection en cours...</span>
+                </>
+              ) : (
+                <>
+                  <Zap size={18} className="fill-white" />
+                  <span>
+                    {connectionMode === 'remote' 
+                      ? `⚡ Injecter via ZeroTier / VPN (${remoteIp || 'Non configurée'})` 
+                      : connectionMode === 'local' 
+                        ? `⚡ Injecter en Réseau Local (${localIp || '192.168.88.1'})`
+                        : '⚡ Injecter maintenant (Détection Auto IF)'}
+                  </span>
+                </>
+              )}
+            </button>
 
             {/* Message de succès d'injection */}
             {injectSuccess && (
-              <div className="mt-4 p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
                 <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold text-emerald-200">Injection réussie !</p>
@@ -374,7 +538,7 @@ function TunnelModal({ isOpen, onClose, router }) {
 
             {/* Message d'erreur d'injection */}
             {injectError && (
-              <div className="mt-4 p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="p-3.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-300">
                 <AlertCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-bold text-red-200">{injectError}</p>

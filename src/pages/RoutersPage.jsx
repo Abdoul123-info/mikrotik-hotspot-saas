@@ -98,7 +98,14 @@ function RoutersPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="font-mono text-sm text-white/70">{router.ip}</span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-mono text-sm text-white/80">{router.ip}</span>
+                          {(router.ztIp || router.remoteIp) && (
+                            <span className="font-mono text-[10px] text-emerald-400/80 flex items-center gap-1 font-semibold">
+                              ZT: {router.ztIp || router.remoteIp}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className="font-mono text-sm text-white/50">{router.port}</span>
