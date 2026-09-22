@@ -19,26 +19,30 @@ function TunnelModal({ isOpen, onClose, router }) {
   const [connectionMode, setConnectionMode] = useState('auto');
   const [remoteIp, setRemoteIp] = useState('');
   const [localIp, setLocalIp] = useState('');
+  const [password, setPassword] = useState('');
 
   // États d'injection automatique
   const [injecting, setInjecting] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(null);
   const [injectError, setInjectError] = useState(null);
   const [injectTip, setInjectTip] = useState(null);
+  const [deviceNotice, setDeviceNotice] = useState(null);
   const [showFullScript, setShowFullScript] = useState(false);
 
   useEffect(() => {
     if (isOpen && router) {
       fetchAgentKey();
-      const zt = router.ztIp || router.remoteIp || '';
-      const local = router.ip || '';
+      const zt = router.ztIp || router.remoteIp || (router.ip && (router.ip.startsWith('10.') || router.ip.startsWith('172.')) ? router.ip : '');
+      const local = (router.ip && !router.ip.startsWith('10.') && !router.ip.startsWith('172.')) ? router.ip : (router.ip || '192.168.88.1');
       setRemoteIp(zt);
       setLocalIp(local);
-      // Si une IP ZeroTier est présente, sélectionner 'auto' par défaut
-      setConnectionMode('auto');
+      setPassword(router.password || '');
+      // Si une IP ZeroTier est présente, sélectionner 'remote' ou 'auto'
+      setConnectionMode(zt ? 'remote' : 'auto');
       setInjectSuccess(null);
       setInjectError(null);
       setInjectTip(null);
+      setDeviceNotice(null);
     } else {
       setAgentKey('');
       setCopied(false);
@@ -47,6 +51,7 @@ function TunnelModal({ isOpen, onClose, router }) {
       setInjectSuccess(null);
       setInjectError(null);
       setInjectTip(null);
+      setDeviceNotice(null);
     }
   }, [isOpen, router]);
 
@@ -73,6 +78,7 @@ function TunnelModal({ isOpen, onClose, router }) {
       setInjectSuccess(null);
       setInjectError(null);
       setInjectTip(null);
+      setDeviceNotice(null);
 
       let targetIp = null;
       if (connectionMode === 'remote') {
@@ -87,7 +93,21 @@ function TunnelModal({ isOpen, onClose, router }) {
         }
       }
 
-      const res = await fetch(`${BASE_URL}/api/agent/inject/${router.id}`, {
+      // Passerelle locale intelligente : si l'app tourne sur un cloud distant (Render/Vercel)
+      // et que l'utilisateur a son backend local démarré sur son PC (qui est connecté à ZeroTier),
+      // on utilise localhost:3001 pour injecter directement sans blocage réseau !
+      let targetBaseUrl = BASE_URL;
+      if (!BASE_URL.includes('localhost') && !BASE_URL.includes('127.0.0.1')) {
+        try {
+          const probe = await fetch('http://localhost:3001/', { signal: AbortSignal.timeout(1200) });
+          if (probe.ok) {
+            targetBaseUrl = 'http://localhost:3001';
+            console.log('⚡ Pont local actif : injection via localhost:3001');
+          }
+        } catch (_) {}
+      }
+
+      const res = await fetch(`${targetBaseUrl}/api/agent/inject/${router.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +115,8 @@ function TunnelModal({ isOpen, onClose, router }) {
         },
         body: JSON.stringify({
           mode: connectionMode,
-          targetIp: targetIp || undefined
+          targetIp: targetIp || undefined,
+          password: password || undefined
         })
       });
 
@@ -106,6 +127,9 @@ function TunnelModal({ isOpen, onClose, router }) {
       }
 
       setInjectSuccess(data.message || 'Script et Scheduler installés avec succès !');
+      if (data.deviceModeNotice) {
+        setDeviceNotice(data.deviceModeNotice);
+      }
     } catch (err) {
       setInjectError(err.message || 'Impossible d\'injecter le script automatiquement.');
       setInjectTip(err.tip || null);
@@ -499,6 +523,26 @@ function TunnelModal({ isOpen, onClose, router }) {
                   </span>
                 </div>
               )}
+              {/* Champ Mot de passe du routeur */}
+              <div className="pt-2.5 border-t border-white/10">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-white/70 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldAlert size={13} className="text-amber-400" />
+                    Mot de passe API / Winbox du routeur :
+                  </label>
+                  <span className="text-[10px] text-white/40">Utilisateur: {router.login || 'admin'}</span>
+                </div>
+                <input
+                  type="password"
+                  className="input-glass w-full text-xs font-mono py-2"
+                  placeholder="Mot de passe du MikroTik (ex: doul@2026)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <p className="text-[10px] text-white/40 mt-1">
+                  💡 Port API utilisé : {router.port || 8728}. Nécessaire pour injecter le script à distance via ZeroTier.
+                </p>
+              </div>
             </div>
 
             <button
@@ -532,6 +576,17 @@ function TunnelModal({ isOpen, onClose, router }) {
                 <div>
                   <p className="font-bold text-emerald-200">Injection réussie !</p>
                   <p className="text-emerald-300/90 mt-0.5">{injectSuccess}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Avertissement RouterOS v7 device-mode */}
+            {deviceNotice && (
+              <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5 animate-in fade-in duration-300">
+                <ShieldAlert size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-200">Mode Sécurité RouterOS v7 Détecté</p>
+                  <p className="text-amber-200/80 leading-relaxed text-[11px]">{deviceNotice}</p>
                 </div>
               </div>
             )}

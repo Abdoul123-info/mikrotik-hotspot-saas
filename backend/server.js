@@ -56,7 +56,7 @@ function getCacheKey(ip, endpoint, cmd, params, dateFilter) {
   return `${ip}:${endpoint}:${cmd}:${JSON.stringify(params)}:${dateFilter || 'none'}`;
 }
 
-async function getConnection(ip, username, password, port) {
+async function getConnection(ip, username, password, port, connectTimeout = 18000) {
     const key = `${username}@${ip}:${port}`;
     
     try {
@@ -76,7 +76,7 @@ async function getConnection(ip, username, password, port) {
             user: username,
             password: password || '',
             port: parseInt(port) || 8728,
-            timeout: 20,
+            timeout: Math.max(20, Math.round(connectTimeout / 1000) + 5),
             tls: port === '8729' ? { rejectUnauthorized: false } : false
         });
 
@@ -84,7 +84,7 @@ async function getConnection(ip, username, password, port) {
         
         const result = await Promise.race([
             connPromise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_BRIDGE: Le routeur ne répond pas.')), 18000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_BRIDGE: Le routeur ne répond pas.')), connectTimeout))
         ]);
 
         const errorHandler = (err) => {
@@ -271,73 +271,97 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé à ce routeur.' });
     }
 
-    // 📡 [AGENT PUSH DIRECT FALLBACK]
-    // Si le routeur est configuré en mode Agent (CGNAT/NAT), on ne tente jamais de connexion directe TCP
-    if (router.agentKey) {
-      if (isReadOperation) {
-        const agentData = router.agentData || {};
-        const syncAge = agentData.lastSync ? Date.now() - new Date(agentData.lastSync).getTime() : null;
-        
-        let cachedResult;
-        if (endpoint.includes('/active')) {
-          const leases = agentData.dhcpLeases || [];
-          const leaseMap = new Map();
-          leases.forEach(l => {
-            if (l && l['mac-address']) leaseMap.set(l['mac-address'].toLowerCase(), l['host-name']);
-            if (l && l.address) leaseMap.set(l.address, l['host-name']);
-          });
+    const apiPort = parseInt(router.port) || 8728;
+    const candidateHosts = [];
+    if (router.ztIp) candidateHosts.push({ ip: router.ztIp, label: 'ZeroTier' });
+    if (router.ip && (!router.ztIp || router.ip !== router.ztIp)) {
+      const isZt = router.ip.startsWith('10.') || router.ip.startsWith('172.');
+      candidateHosts.push({ ip: router.ip, label: isZt ? 'ZeroTier' : 'Local' });
+    }
+    if (candidateHosts.length === 0 && router.host) {
+      candidateHosts.push({ ip: router.host, label: 'Host' });
+    }
 
-          cachedResult = (agentData.activeUsers || []).map(u => ({
-            ...u,
-            '.id': u.user,
-            host: leaseMap.get((u['mac-address'] || '').toLowerCase()) || leaseMap.get(u.address) || ''
-          }));
-        } else if (endpoint.includes('/resource')) {
-          cachedResult = agentData.systemResource || {};
-        } else if (endpoint.includes('/monitor-traffic')) {
-          cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
-        } else if (endpoint.includes('/user/profile')) {
-          cachedResult = agentData.userProfiles || [];
-        } else if (endpoint.includes('/user')) {
-          cachedResult = agentData.hotspotUsers || [];
-        } else if (endpoint.includes('/script')) {
-          cachedResult = agentData.mikhmonSales || [];
-        } else if (endpoint.includes('/dhcp-server/lease')) {
-          cachedResult = agentData.dhcpLeases || [];
-        } else if (endpoint.includes('/hotspot/server')) {
-          cachedResult = agentData.hotspotServers || [];
-        } else {
-          cachedResult = [];
-        }
+    let conn = null;
+    let targetHost = router.ztIp || router.ip;
+    let lastConnError = null;
+    const probeTimeout = router.agentKey ? 3500 : 15000;
 
-        console.log(`✅ [AGENT CACHE DIRECT] ${endpoint} (syncAge: ${syncAge !== null ? Math.round(syncAge/1000) + 's' : 'never'})`);
-        res.setHeader('X-Data-Source', 'agent-cache');
-        if (syncAge !== null) {
-          res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
-        }
-        return res.status(200).json(cachedResult);
-      } else {
-        // Opération d'écriture : mettre directement en file d'attente
-        console.log(`📥 [QUEUING DIRECT] Mise en file d'attente de la commande ${method} ${endpoint} pour le routeur ${routerId}`);
-        await adminDb.collection('routers').doc(routerId).collection('commands').add({
-          endpoint,
-          method,
-          data: data || {},
-          status: 'pending',
-          createdAt: new Date().toISOString()
-        });
-        return res.status(200).json({
-          success: true,
-          queued: true,
-          message: "Le routeur est actuellement injoignable (NAT/CGNAT). La commande a été mise en file d'attente et sera exécutée dès que le routeur se synchronisera (environ 1 min)."
-        });
+    for (const cand of candidateHosts) {
+      try {
+        console.log(`📡 [User:${req.user.userId}] API:${apiPort} ${method || 'GET'} ${endpoint} @ ${cand.ip} (${cand.label})`);
+        conn = await getConnection(cand.ip, router.login, router.password, apiPort, probeTimeout);
+        targetHost = cand.ip;
+        break;
+      } catch (err) {
+        lastConnError = err;
       }
     }
 
-    const apiPort = parseInt(router.port) || 8728;
-    console.log(`📡 [User:${req.user.userId}] API:${apiPort} ${method || 'GET'} ${endpoint} @ ${router.ip}`);
+    if (!conn) {
+      // Si la connexion TCP directe échoue, vérifier si l'Agent Push est actif pour basculer sur le cache ou la file
+      if (router.agentKey) {
+        if (isReadOperation) {
+          const agentData = router.agentData || {};
+          const syncAge = agentData.lastSync ? Date.now() - new Date(agentData.lastSync).getTime() : null;
+          
+          let cachedResult;
+          if (endpoint.includes('/active')) {
+            const leases = agentData.dhcpLeases || [];
+            const leaseMap = new Map();
+            leases.forEach(l => {
+              if (l && l['mac-address']) leaseMap.set(l['mac-address'].toLowerCase(), l['host-name']);
+              if (l && l.address) leaseMap.set(l.address, l['host-name']);
+            });
 
-    const conn = await getConnection(router.ip, router.login, router.password, apiPort);
+            cachedResult = (agentData.activeUsers || []).map(u => ({
+              ...u,
+              '.id': u.user,
+              host: leaseMap.get((u['mac-address'] || '').toLowerCase()) || leaseMap.get(u.address) || ''
+            }));
+          } else if (endpoint.includes('/resource')) {
+            cachedResult = agentData.systemResource || {};
+          } else if (endpoint.includes('/monitor-traffic')) {
+            cachedResult = [{ 'rx-bits-per-second': '0', 'tx-bits-per-second': '0' }];
+          } else if (endpoint.includes('/user/profile')) {
+            cachedResult = agentData.userProfiles || [];
+          } else if (endpoint.includes('/user')) {
+            cachedResult = agentData.hotspotUsers || [];
+          } else if (endpoint.includes('/script')) {
+            cachedResult = agentData.mikhmonSales || [];
+          } else if (endpoint.includes('/dhcp-server/lease')) {
+            cachedResult = agentData.dhcpLeases || [];
+          } else if (endpoint.includes('/hotspot/server')) {
+            cachedResult = agentData.hotspotServers || [];
+          } else {
+            cachedResult = [];
+          }
+
+          console.log(`✅ [AGENT CACHE DIRECT] ${endpoint} (syncAge: ${syncAge !== null ? Math.round(syncAge/1000) + 's' : 'never'})`);
+          res.setHeader('X-Data-Source', 'agent-cache');
+          if (syncAge !== null) {
+            res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
+          }
+          return res.status(200).json(cachedResult);
+        } else {
+          // Opération d'écriture : mettre directement en file d'attente
+          console.log(`📥 [QUEUING DIRECT] Mise en file d'attente de la commande ${method} ${endpoint} pour le routeur ${routerId}`);
+          await adminDb.collection('routers').doc(routerId).collection('commands').add({
+            endpoint,
+            method,
+            data: data || {},
+            status: 'pending',
+            createdAt: new Date().toISOString()
+          });
+          return res.status(200).json({
+            success: true,
+            queued: true,
+            message: "Le routeur est actuellement injoignable via TCP (ZeroTier/Local). La commande a été mise en file d'attente."
+          });
+        }
+      }
+      throw lastConnError || new Error(`Injoignable aux adresses : ${candidateHosts.map(c => c.ip).join(', ')}`);
+    }
     
     const cleanData = data ? { ...data } : {};
     let proplist = cleanData.proplist;
@@ -412,6 +436,21 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
 
     const duration = Date.now() - start;
     console.log(`✅ ${endpoint} (${Array.isArray(output) ? output.length : '1'} items) en ${duration}ms`);
+
+    // 🔄 Sync live data to Firestore agentData asynchronously so remote/mobile dashboards stay fresh
+    if (router.agentKey && isReadOperation) {
+      try {
+        const updateField = {};
+        if (endpoint.includes('/active')) updateField['agentData.activeUsers'] = output;
+        else if (endpoint.includes('/resource')) updateField['agentData.systemResource'] = normalizeResource(output);
+        else if (endpoint.includes('/user/profile')) updateField['agentData.userProfiles'] = output;
+        
+        if (Object.keys(updateField).length > 0) {
+          updateField['agentData.lastSync'] = new Date().toISOString();
+          adminDb.collection('routers').doc(routerId).update(updateField).catch(() => {});
+        }
+      } catch (_) {}
+    }
 
     res.status(200).json(output);
 
@@ -760,28 +799,36 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
 
     const scriptSource = generateAgentPushScript(routerId, agentKey, backendHost);
 
-    const { targetIp, mode } = req.body || {};
+    const { targetIp, mode, password: reqPassword, login: reqLogin } = req.body || {};
     const localIp = router.ip || router.host;
-    const remoteIp = router.ztIp || router.remoteIp || router.vpnIp;
-    const login = router.login || router.user || router.username || 'admin';
-    const password = router.password || '';
+    const remoteIp = router.ztIp || router.remoteIp || router.vpnIp || ((localIp && (localIp.startsWith('10.') || localIp.startsWith('172.'))) ? localIp : null);
+    const login = reqLogin || router.login || router.user || router.username || 'admin';
+    const password = (reqPassword !== undefined && reqPassword !== '') ? reqPassword : (router.password || '');
     const port = parseInt(req.body?.port || router.port) || 8728;
 
     // Déterminer la liste des IPs candidates à tester dans l'ordre approprié
     let candidateIps = [];
 
     if (targetIp && targetIp.trim()) {
-      candidateIps.push({ ip: targetIp.trim(), label: 'IP manuelle' });
+      const tip = targetIp.trim();
+      const isZt = tip.startsWith('10.') || tip.startsWith('172.');
+      candidateIps.push({ ip: tip, label: isZt ? 'ZeroTier (IP manuelle)' : 'IP manuelle' });
+    }
+    
+    if (remoteIp && (!targetIp || targetIp.trim() !== remoteIp)) {
+      candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
+    }
+
+    if (localIp && (!targetIp || targetIp.trim() !== localIp) && (!remoteIp || localIp !== remoteIp)) {
+      const isZt = localIp.startsWith('10.');
+      candidateIps.push({ ip: localIp, label: isZt ? 'ZeroTier (IP routeur)' : 'Réseau Local' });
+    }
+
+    // Réordonner selon le mode choisi
+    if (mode === 'remote' || mode === 'vpn' || mode === 'zerotier') {
+      candidateIps.sort((a, b) => (b.label.includes('ZeroTier') ? 1 : 0) - (a.label.includes('ZeroTier') ? 1 : 0));
     } else if (mode === 'local') {
-      if (localIp) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
-      if (remoteIp && remoteIp !== localIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
-    } else if (mode === 'remote' || mode === 'vpn' || mode === 'zerotier') {
-      if (remoteIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
-      if (localIp && localIp !== remoteIp) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
-    } else {
-      // Mode Auto : tester ZeroTier/VPN d'abord (car souvent distant), puis Local
-      if (remoteIp) candidateIps.push({ ip: remoteIp, label: 'ZeroTier / VPN' });
-      if (localIp && (!remoteIp || localIp !== remoteIp)) candidateIps.push({ ip: localIp, label: 'Réseau Local' });
+      candidateIps.sort((a, b) => (b.label.includes('Local') ? 1 : 0) - (a.label.includes('Local') ? 1 : 0));
     }
 
     if (candidateIps.length === 0) {
@@ -795,7 +842,7 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
     for (const cand of candidateIps) {
       console.log(`⚡ [INJECTION] Tentative vers ${cand.ip}:${port} (${cand.label}) pour ${router.name || routerId}...`);
       try {
-        conn = await getConnection(cand.ip, login, password, port);
+        conn = await getConnection(cand.ip, login, password, port, 8000);
         successfulCandidate = cand;
         console.log(`✅ [INJECTION] Connexion établie avec succès via ${cand.ip} (${cand.label}) !`);
         break;
@@ -862,14 +909,29 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
       console.warn(`⚠️ [INJECTION] Déclenchement initial:`, runErr.message);
     }
 
-    // 4. Mettre à jour Firestore
+    // 4. Vérification de sécurité RouterOS v7 (device-mode)
+    let deviceModeNotice = null;
+    try {
+      const dm = await conn.write('/system/device-mode/print');
+      if (dm && dm[0] && (dm[0].fetch === 'false' || dm[0].mode === 'home')) {
+        deviceModeNotice = "Note RouterOS v7 : Votre MikroTik a le mode sécurité actif ('device-mode: home', fetch désactivé). La connexion directe et l'administration via ZeroTier fonctionnent à 100%. Si vous souhaitez que le script MikroTik utilise /tool fetch en toute autonomie, exécutez '/system device-mode update mode=enterprise' puis confirmez physiquement.";
+      }
+    } catch (dmErr) {}
+
+    // 5. Mettre à jour Firestore
     const firestoreUpdates = {
       agentKey,
       agentInstalled: true,
       agentInstalledAt: new Date().toISOString()
     };
-    if (targetIp && targetIp !== localIp) {
-      firestoreUpdates.ztIp = targetIp;
+    if (successfulCandidate.ip.startsWith('10.') || successfulCandidate.label.includes('ZeroTier')) {
+      firestoreUpdates.ztIp = successfulCandidate.ip;
+    }
+    if (reqPassword && reqPassword !== router.password) {
+      firestoreUpdates.password = reqPassword;
+    }
+    if (reqLogin && reqLogin !== router.login) {
+      firestoreUpdates.login = reqLogin;
     }
     await adminDb.collection('routers').doc(routerId).update(firestoreUpdates);
 
@@ -878,7 +940,8 @@ app.post('/api/agent/inject/:routerId', requireAuth, async (req, res) => {
       success: true,
       message: `Script Agent Push injecté et activé avec succès via ${successfulCandidate.label} (${successfulCandidate.ip}) !`,
       connectedIp: successfulCandidate.ip,
-      modeUsed: successfulCandidate.label
+      modeUsed: successfulCandidate.label,
+      deviceModeNotice
     });
   } catch (err) {
     console.error('❌ [INJECTION ERROR]:', err);
