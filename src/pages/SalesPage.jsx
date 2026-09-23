@@ -205,11 +205,21 @@ function SalesPage() {
   }, [filteredTickets, viewMode, selectedYear, selectedMonth]);
 
   // Pre-sorted table data with cumulative totals (memoized)
+  // Trié par ordre antéchronologique (les ventes les plus récentes en haut)
   const sortedTableData = useMemo(() => {
     const sorted = filteredTickets
       .slice()
-      .map(t => ({ ...t, _parsed: parseTicketDate(t) }))
-      .sort((a, b) => (a._parsed || 0) - (b._parsed || 0));
+      .map(t => {
+        const d = parseTicketDate(t);
+        if (d && d.getHours() === 0 && d.getMinutes() === 0 && t.time) {
+          const tp = t.time.split(':');
+          if (tp.length >= 2) {
+            d.setHours(parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2] || 0, 10));
+          }
+        }
+        return { ...t, _parsed: d };
+      })
+      .sort((a, b) => (b._parsed || 0) - (a._parsed || 0));
     let cumul = 0;
     return sorted.map(t => {
       cumul += parseInt(t.price) || 0;
@@ -522,7 +532,7 @@ function SalesPage() {
                 <th className="px-6 py-4">Adresse IP</th>
                 <th className="px-6 py-4">MAC</th>
                 <th className="px-6 py-4">Profil</th>
-                <th className="px-6 py-4 text-center">Heure</th>
+                <th className="px-6 py-4 text-center">{viewMode === 'day' ? 'Heure' : 'Date & Heure'}</th>
                 <th className="px-6 py-4 text-right">Montant</th>
               </tr>
             </thead>
@@ -573,15 +583,16 @@ function SalesPage() {
                         <span className="text-white/60 font-bold uppercase text-[10px] tracking-wider">{t.profileName}</span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        {t.time ? (
-                          <span className="text-primary/60 font-black font-mono">
-                            {t.time.length >= 5 ? t.time.substring(0, 5) : t.time}
+                        <div className="flex flex-col items-center">
+                          {viewMode !== 'day' && d && (
+                            <span className="text-[10px] text-white/40 font-mono leading-tight">
+                              {String(d.getDate()).padStart(2, '0')} {MONTHS_FR[d.getMonth()]?.substring(0, 3)}
+                            </span>
+                          )}
+                          <span className="text-primary font-black font-mono">
+                            {t.time ? (t.time.length >= 5 ? t.time.substring(0, 5) : t.time) : d ? `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` : '---'}
                           </span>
-                        ) : d ? (
-                          <span className="text-primary/60 font-black font-mono">
-                            {String(d.getHours()).padStart(2,'0')}:{String(d.getMinutes()).padStart(2,'0')}
-                          </span>
-                        ) : '---'}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right font-black text-white group-hover:text-primary transition-colors">
                         {formatCurrency(parseInt(t.price) || 0, settings)}
