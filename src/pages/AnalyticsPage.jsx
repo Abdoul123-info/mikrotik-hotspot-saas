@@ -8,6 +8,7 @@ import {
   RefreshCw, Award, Zap, Calendar
 } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useRouter } from '../contexts/RouterContext';
 import { useSales } from '../contexts/SalesContext';
 import { formatCurrency } from '../utils/currency';
 import { parseTicketDate, isSameDay } from '../utils/sales';
@@ -59,12 +60,15 @@ function StatCard({ icon, label, value, sub, trend, color = 'primary' }) {
 
 function AnalyticsPage() {
   const { settings } = useSettings();
+  const { activeRouter } = useRouter();
   const { sales, isLoading, error, fetchSales, lastSync } = useSales();
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
-    fetchSales('full');
-  }, [fetchSales]);
+    if (activeRouter?.id) {
+      fetchSales('full', true);
+    }
+  }, [activeRouter?.id, fetchSales]);
 
   const now = new Date();
   const thisMonth = now.getMonth();

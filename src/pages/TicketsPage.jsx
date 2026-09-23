@@ -76,15 +76,14 @@ function TicketsPage() {
 
   const fetchTickets = async () => {
     if (!activeRouter) {
-      const history = JSON.parse(localStorage.getItem('hspot_history') || '[]');
-      setVouchers(history);
+      setVouchers([]);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
       const realUsers = await getHotspotUsers(activeRouter);
-      const history = JSON.parse(localStorage.getItem('hspot_history') || '[]');
+      const history = JSON.parse(localStorage.getItem(`hspot_history_${activeRouter.id}`) || '[]');
       
       const merged = new Map();
       

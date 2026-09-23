@@ -15,71 +15,98 @@ const MONTHS_MAP = {
 };
 
 export const parseTicketDate = (ticket) => {
-  const comment = (ticket.comment || '').trim().toLowerCase();
+  if (!ticket) return null;
+  if (ticket instanceof Date) return isNaN(ticket.getTime()) ? null : ticket;
+
+  const rawComment = typeof ticket === 'string'
+    ? ticket
+    : (ticket.comment || ticket.date || ticket.dateRaw || ticket.createdAt || '');
+  
+  const comment = String(rawComment).trim();
   if (!comment) return null;
 
-  // 1. Activation format (Mikhmon)
-  // Must contain "up-" or be a sales record
-  const isMikhmon = comment.includes('up-') || comment.includes('-|-');
-  const cleanComment = comment.replace(/^up-/, '');
+  const explicitTime = typeof ticket === 'object' && ticket.time ? String(ticket.time).trim() : null;
 
-  // A. Format with Month Names (MikroTik native: apr/10/2026 or 10/apr/2026)
+  const applyTime = (d, str) => {
+    if (!d || isNaN(d.getTime())) return null;
+    const timeMatch = explicitTime 
+      ? explicitTime.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/)
+      : (str ? str.match(/(?:[\sT]+)(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/) : null);
+    if (timeMatch) {
+      d.setHours(parseInt(timeMatch[1], 10), parseInt(timeMatch[2], 10), parseInt(timeMatch[3] || 0, 10), 0);
+    }
+    return d;
+  };
+
+  const lowerComment = comment.toLowerCase();
+  const cleanComment = lowerComment.replace(/^up-/, '');
+
+  // A. Standard ISO: 2026-09-23 15:36:17 or 2026-09-01
+  const fmtISO = cleanComment.match(/^(\d{4})-(\d{2})-(\d{2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (fmtISO) {
+    const d = new Date(
+      parseInt(fmtISO[1], 10),
+      parseInt(fmtISO[2], 10) - 1,
+      parseInt(fmtISO[3], 10),
+      parseInt(fmtISO[4] || 0, 10),
+      parseInt(fmtISO[5] || 0, 10),
+      parseInt(fmtISO[6] || 0, 10)
+    );
+    return explicitTime && !fmtISO[4] ? applyTime(d, null) : d;
+  }
+
+  // B. Format with Month Names (apr/10/2026 14:20 or 10/apr/2026)
   const fmtMonth = cleanComment.match(/([a-z]{3,5})[\/.-](\d{1,2})[\/.-](\d{4})/);
   if (fmtMonth) {
     const month = MONTHS_MAP[fmtMonth[1].substring(0, 3)] ?? -1;
-    if (month !== -1) return new Date(parseInt(fmtMonth[3]), month, parseInt(fmtMonth[2]));
+    if (month !== -1) {
+      return applyTime(new Date(parseInt(fmtMonth[3], 10), month, parseInt(fmtMonth[2], 10)), comment);
+    }
   }
+
   const fmtMonthInv = cleanComment.match(/(\d{1,2})[\/.-]([a-z]{3,5})[\/.-](\d{4})/);
   if (fmtMonthInv) {
     const month = MONTHS_MAP[fmtMonthInv[2].substring(0, 3)] ?? -1;
-    if (month !== -1) return new Date(parseInt(fmtMonthInv[3]), month, parseInt(fmtMonthInv[1]));
+    if (month !== -1) {
+      return applyTime(new Date(parseInt(fmtMonthInv[3], 10), month, parseInt(fmtMonthInv[1], 10)), comment);
+    }
   }
 
-  // B. Standard ISO: up-2026-04-10 21:55:13 or 2026-09-23 20:49:01
-  const fmtISO = cleanComment.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?/);
-  if (fmtISO) {
-    return new Date(parseInt(fmtISO[1]), parseInt(fmtISO[2]) - 1, parseInt(fmtISO[3]), 
-                    parseInt(fmtISO[4] || 0), parseInt(fmtISO[5] || 0), parseInt(fmtISO[6] || 0));
-  }
-
-  // B2. Mikhmon activation date: up-xxx-MM.DD.YY (e.g. up-421-06.23.26-)
-  const fmtMikhmonDate = comment.match(/up-(?:[a-zA-Z0-9]+-)?(\d{2})[.\/-](\d{2})[.\/-](\d{2,4})/i);
+  // C. Mikhmon activation date: up-xxx-MM.DD.YY (e.g. up-421-06.23.26-)
+  const fmtMikhmonDate = lowerComment.match(/up-(?:[a-zA-Z0-9]+-)?(\d{2})[.\/-](\d{2})[.\/-](\d{2,4})/);
   if (fmtMikhmonDate) {
-    const month = parseInt(fmtMikhmonDate[1]) - 1;
-    const day = parseInt(fmtMikhmonDate[2]);
-    let year = parseInt(fmtMikhmonDate[3]);
+    const month = parseInt(fmtMikhmonDate[1], 10) - 1;
+    const day = parseInt(fmtMikhmonDate[2], 10);
+    let year = parseInt(fmtMikhmonDate[3], 10);
     if (year < 100) year += 2000;
     if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
-      return new Date(year, month, day);
+      return applyTime(new Date(year, month, day), comment);
     }
   }
 
-  // C. Generalized numeric match for DD[./-]MM[./-]YY[YY] or MM[./-]DD[./-]YY[YY]
+  // D. Generalized numeric match: DD/MM/YYYY or MM/DD/YYYY
   const fmtGen = cleanComment.match(/(\d{1,4})[.\/-](\d{1,2})[.\/-](\d{1,4})/);
   if (fmtGen) {
-    let p1 = parseInt(fmtGen[1]);
-    let p2 = parseInt(fmtGen[2]);
-    let p3 = parseInt(fmtGen[3]);
-    
-    if (p1 > 1000) return new Date(p1, p2 - 1, p3); // yyyy-mm-dd
-    let year = p3 < 100 ? 2000 + p3 : p3;
-    if (p1 > 12) return new Date(year, p2 - 1, p1); // dd-mm-yyyy
-    if (p2 > 12) return new Date(year, p1 - 1, p2); // mm-dd-yyyy
-    return new Date(year, p2 - 1, p1); // default dd-mm-yyyy
+    let p1 = parseInt(fmtGen[1], 10);
+    let p2 = parseInt(fmtGen[2], 10);
+    let p3 = parseInt(fmtGen[3], 10);
+    let d;
+    if (p1 > 1000) d = new Date(p1, p2 - 1, p3);
+    else {
+      let year = p3 < 100 ? 2000 + p3 : p3;
+      if (p1 > 12) d = new Date(year, p2 - 1, p1);
+      else if (p2 > 12) d = new Date(year, p1 - 1, p2);
+      else d = new Date(year, p2 - 1, p1);
+    }
+    return applyTime(d, comment);
   }
 
-  // 2. Creator format ("App 10/04/2026")
-  if (comment.startsWith('App ')) {
-    const fmtApp = comment.match(/^App\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  // E. Creator format ("App 10/04/2026")
+  if (cleanComment.startsWith('app ')) {
+    const fmtApp = cleanComment.match(/^app\s+(\d{2})\/(\d{2})\/(\d{4})/);
     if (fmtApp) {
-      return new Date(parseInt(fmtApp[3]), parseInt(fmtApp[2]) - 1, parseInt(fmtApp[1]));
+      return applyTime(new Date(parseInt(fmtApp[3], 10), parseInt(fmtApp[2], 10) - 1, parseInt(fmtApp[1], 10)), comment);
     }
-  }
-  
-  // 3. Exact date format (if the comment is ONLY a date, likely a manual entry)
-  const fmtPlain = comment.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (fmtPlain) {
-    return new Date(parseInt(fmtPlain[3]), parseInt(fmtPlain[2]) - 1, parseInt(fmtPlain[1]));
   }
 
   return null;

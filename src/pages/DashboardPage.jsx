@@ -117,21 +117,31 @@ function DashboardPage() {
   
   const [bandwidthData, setBandwidthData] = useState([]);
   const [activeUserCount, setActiveUserCount] = useState(0);
-  // Load cached stats immediately for a 'snappy' feel
-  const [dailyStats, setDailyStats] = useState(() => {
-    const cached = localStorage.getItem('hspot_daily_stats');
-    return cached ? JSON.parse(cached) : { revenue: 0, count: 0 };
-  });
+  const [dailyStats, setDailyStats] = useState({ revenue: 0, count: 0 });
   const [isLoading, setIsLoading] = useState(false);
+
+  // 🔄 RESET dashboard-specific data when router changes
+  useEffect(() => {
+    if (!activeRouter) return;
+    // Reset monitoring data for new router
+    setBandwidthData([]);
+    setActiveUserCount(0);
+    // Load cached stats for THIS router (keyed by router ID)
+    const cacheKey = `hspot_daily_stats_${activeRouter.id}`;
+    const cached = localStorage.getItem(cacheKey);
+    setDailyStats(cached ? JSON.parse(cached) : { revenue: 0, count: 0 });
+  }, [activeRouter?.id]);
 
   // Sync sales from context to dailyStats local state for the dashboard cards
   useEffect(() => {
-    if (sales.length > 0) {
+    if (sales.length > 0 && activeRouter) {
       const stats = calculateMikhmonStats(sales);
       setDailyStats(stats);
-      localStorage.setItem('hspot_daily_stats', JSON.stringify(stats));
+      localStorage.setItem(`hspot_daily_stats_${activeRouter.id}`, JSON.stringify(stats));
+    } else if (sales.length === 0) {
+      setDailyStats({ revenue: 0, count: 0 });
     }
-  }, [sales]);
+  }, [sales, activeRouter?.id]);
 
   useEffect(() => {
     if (!activeRouter) return;
@@ -156,12 +166,11 @@ function DashboardPage() {
     };
 
     // Trigger the SHARED SalesContext (used by all pages) for today's revenue.
-    // This avoids a double-fetch: the SalesContext already handles caching + polling.
     fetchSales('today');
 
     fetchMonitoring();
     const monitorInterval = setInterval(fetchMonitoring, 10000);
-    // Refresh revenue every 2 minutes (was every 60s — less aggressive now)
+    // Refresh revenue every 2 minutes
     const salesInterval = setInterval(() => fetchSales('today'), 120000);
 
     return () => {

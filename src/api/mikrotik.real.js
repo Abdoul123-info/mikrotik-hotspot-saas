@@ -274,9 +274,10 @@ export const generateVouchers = async (router, profile, qty, options = {}) => {
     }
   }
 
-  // Persistance locale (historique hors-ligne + cache)
-  const history = JSON.parse(localStorage.getItem('hspot_history') || '[]');
-  localStorage.setItem('hspot_history', JSON.stringify([...vouchers, ...history]));
+  // Persistance locale (historique hors-ligne + cache) — keyed per router
+  const historyKey = `hspot_history_${router.id}`;
+  const history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+  localStorage.setItem(historyKey, JSON.stringify([...vouchers, ...history]));
 
   return vouchers;
 };
@@ -381,17 +382,23 @@ export const getMikhmonSales = async (router) => {
       .map(s => {
         const parts = s.name.split('-|-');
         // Format: date-|-time-|-user-|-price-|-address-|-mac-|-validity-|-profile-|-comment
+        // OR:     date-|-time-|-user-|-price-|-validity-|-profile  (5-part legacy)
+        // s.source only contains the date (e.g. "2026-09-01") — never use it for display
+        // because it lacks the time component, causing everything to show 00:00
+        const dateStr = parts[0]?.trim() || '';
+        const timeStr = parts[1]?.trim() || '';
         return {
           id: s['.id'] || s.id,
-          dateRaw: parts[0],
+          dateRaw: dateStr,
+          time: timeStr,
           price: parseInt(parts[3]) || 0,
           user: parts[2] || '',
           address: parts[4] || '',
           macAddress: parts[5] || '',
           validity: parts[6] || '',
           profile: parts[7] || '',
-          // Include time with date for accurate hourly stats
-          date: s.source || (parts[0] + (parts[1] ? ' ' + parts[1] : ''))
+          // Always include time from the script name for accurate hourly stats
+          date: dateStr + (timeStr ? ' ' + timeStr : '')
         };
       });
   } catch (err) {

@@ -73,8 +73,10 @@ function SalesPage() {
   const { sales, isLoading, error, fetchSales, lastSync } = useSales();
 
   useEffect(() => {
-    fetchSales('full');
-  }, [fetchSales]);
+    if (activeRouter?.id) {
+      fetchSales('full', true);
+    }
+  }, [activeRouter?.id, fetchSales]);
 
   const now = new Date();
   const [viewMode, setViewMode] = useState('month'); // 'day' | 'month' | 'year'
@@ -86,16 +88,24 @@ function SalesPage() {
   const MAX_DISPLAY = 100;
 
   const allTickets = useMemo(() => {
-    return sales.map(s => ({
-      id: s.id,
-      username: s.user,
-      price: s.price,
-      profileName: s.profile,
-      comment: s.date,
-      address: s.address,
-      macAddress: s.macAddress,
-      status: 'used'
-    }));
+    return sales.map(s => {
+      let time = s.time || '';
+      if (!time && s.date && s.date.includes(' ')) {
+        time = s.date.split(' ')[1] || '';
+      }
+      return {
+        id: s.id,
+        username: s.user,
+        price: s.price,
+        profileName: s.profile,
+        comment: s.date,
+        dateRaw: s.dateRaw,
+        time: time,
+        address: s.address,
+        macAddress: s.macAddress,
+        status: 'used'
+      };
+    });
   }, [sales]);
 
   const fetchData = () => fetchSales('month');
@@ -563,7 +573,11 @@ function SalesPage() {
                         <span className="text-white/60 font-bold uppercase text-[10px] tracking-wider">{t.profileName}</span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        {d ? (
+                        {t.time ? (
+                          <span className="text-primary/60 font-black font-mono">
+                            {t.time.length >= 5 ? t.time.substring(0, 5) : t.time}
+                          </span>
+                        ) : d ? (
                           <span className="text-primary/60 font-black font-mono">
                             {String(d.getHours()).padStart(2,'0')}:{String(d.getMinutes()).padStart(2,'0')}
                           </span>
