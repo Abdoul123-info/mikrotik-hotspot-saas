@@ -444,6 +444,20 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
         if (endpoint.includes('/active')) updateField['agentData.activeUsers'] = output;
         else if (endpoint.includes('/resource')) updateField['agentData.systemResource'] = normalizeResource(output);
         else if (endpoint.includes('/user/profile')) updateField['agentData.userProfiles'] = output;
+        else if (endpoint.includes('/user')) {
+          // Hotspot users (tickets)
+          updateField['agentData.hotspotUsers'] = Array.isArray(output) ? output.slice(-1000) : output;
+        }
+        else if (endpoint.includes('/script')) {
+          // Mikhmon sales scripts
+          updateField['agentData.mikhmonSales'] = Array.isArray(output) ? output.slice(-2500) : output;
+        }
+        else if (endpoint.includes('/dhcp-server/lease')) {
+          updateField['agentData.dhcpLeases'] = output;
+        }
+        else if (endpoint.includes('/hotspot/server') || endpoint.includes('/hotspot')) {
+          updateField['agentData.hotspotServers'] = output;
+        }
         
         if (Object.keys(updateField).length > 0) {
           updateField['agentData.lastSync'] = new Date().toISOString();
@@ -479,10 +493,9 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
         }
 
         const agentData = routerData.agentData;
-        if (agentData?.lastSync) {
-          const syncAge = Date.now() - new Date(agentData.lastSync).getTime();
-          if (syncAge < 300000) { // Cache valide jusqu'à 5 minutes
-            let cachedResult;
+        if (agentData) {
+          const syncAge = agentData.lastSync ? Date.now() - new Date(agentData.lastSync).getTime() : null;
+          let cachedResult;
             if (endpoint.includes('/active')) {
               const leases = agentData.dhcpLeases || [];
               const leaseMap = new Map();
@@ -509,12 +522,12 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
             else if (endpoint.includes('/hotspot/server')) cachedResult = agentData.hotspotServers || [];
             
             if (cachedResult !== undefined) {
-              console.log(`✅ [AGENT CACHE] ${endpoint} depuis cache (${Math.round(syncAge/1000)}s)`);
+              const ageStr = syncAge !== null ? `${Math.round(syncAge/1000)}s` : 'unknown';
+              console.log(`✅ [AGENT CACHE] ${endpoint} depuis cache (${ageStr})`);
               res.setHeader('X-Data-Source', 'agent-cache');
-              res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
+              if (syncAge !== null) res.setHeader('X-Cache-Age', Math.round(syncAge / 1000));
               return res.status(200).json(cachedResult);
             }
-          }
         }
       } catch (cacheErr) { /* ignore */ }
     }
@@ -733,7 +746,7 @@ function generateAgentPushScript(routerId, agentKey, backendHost) {
 
 # 1. Envoyer les statistiques au serveur
 :do {
-  /tool fetch url=$backendUrl http-method=post http-header-field="Content-Type: application/json" http-data=$json keep-result=no
+  /tool fetch url=$backendUrl http-method=post http-header-field="Content-Type: application/json" http-data=$json keep-result=no check-certificate=no
   :log info "Agent Push: sync complete"
 } on-error={
   :log warning "Agent Push: echec de l envoi des statistiques"
@@ -741,7 +754,7 @@ function generateAgentPushScript(routerId, agentKey, backendHost) {
 
 # 2. Recuperer et executer les commandes en attente
 :do {
-  /tool fetch url=$pendingUrl dst-path="pending.rsc"
+  /tool fetch url=$pendingUrl dst-path="pending.rsc" check-certificate=no
   :delay 2s
   :if ([:len [/file find name="pending.rsc"]] > 0) do={
     :log info "Agent Push: execution des commandes en attente..."

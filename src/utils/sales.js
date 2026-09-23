@@ -35,11 +35,23 @@ export const parseTicketDate = (ticket) => {
     if (month !== -1) return new Date(parseInt(fmtMonthInv[3]), month, parseInt(fmtMonthInv[1]));
   }
 
-  // B. Standard ISO: up-2026-04-10 21:55:13
+  // B. Standard ISO: up-2026-04-10 21:55:13 or 2026-09-23 20:49:01
   const fmtISO = cleanComment.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}):(\d{2}))?/);
   if (fmtISO) {
     return new Date(parseInt(fmtISO[1]), parseInt(fmtISO[2]) - 1, parseInt(fmtISO[3]), 
                     parseInt(fmtISO[4] || 0), parseInt(fmtISO[5] || 0), parseInt(fmtISO[6] || 0));
+  }
+
+  // B2. Mikhmon activation date: up-xxx-MM.DD.YY (e.g. up-421-06.23.26-)
+  const fmtMikhmonDate = comment.match(/up-(?:[a-zA-Z0-9]+-)?(\d{2})[.\/-](\d{2})[.\/-](\d{2,4})/i);
+  if (fmtMikhmonDate) {
+    const month = parseInt(fmtMikhmonDate[1]) - 1;
+    const day = parseInt(fmtMikhmonDate[2]);
+    let year = parseInt(fmtMikhmonDate[3]);
+    if (year < 100) year += 2000;
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
+      return new Date(year, month, day);
+    }
   }
 
   // C. Generalized numeric match for DD[./-]MM[./-]YY[YY] or MM[./-]DD[./-]YY[YY]

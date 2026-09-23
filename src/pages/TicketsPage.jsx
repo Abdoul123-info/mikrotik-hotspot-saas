@@ -17,6 +17,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useRouter } from '../contexts/RouterContext';
 import { getHotspotUsers, blockHotspotUser } from '../api/mikrotik.real';
 import { formatCurrency } from '../utils/currency';
+import { parseTicketDate } from '../utils/sales';
 
 function TicketsPage() {
   const { settings } = useSettings();
@@ -102,10 +103,10 @@ function TicketsPage() {
       });
 
       const sorted = Array.from(merged.values()).sort((a, b) => {
-        const dateA = new Date(a.createdAt);
-        const dateB = new Date(b.createdAt);
-        const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
-        const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
+        const dateA = parseTicketDate({ comment: a.comment || a.createdAt }) || new Date(a.createdAt);
+        const dateB = parseTicketDate({ comment: b.comment || b.createdAt }) || new Date(b.createdAt);
+        const timeA = (dateA && !isNaN(dateA.getTime())) ? dateA.getTime() : 0;
+        const timeB = (dateB && !isNaN(dateB.getTime())) ? dateB.getTime() : 0;
         return timeB - timeA;
       });
 

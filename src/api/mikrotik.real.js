@@ -301,7 +301,11 @@ export const getHotspotUsers = async (router) => {
     }
 
     const profileMap = new Map();
-    profiles.forEach(p => profileMap.set(p.name, p));
+    profiles.forEach(p => {
+      if (p.name) profileMap.set(p.name, p);
+      if (p['.id']) profileMap.set(p['.id'], p);
+      if (p.id) profileMap.set(p.id, p);
+    });
 
     return users.map(u => {
       // Case-insensitive lookup: "Abdoul", "abdoul", "ABDOUL" all match
@@ -326,11 +330,11 @@ export const getHotspotUsers = async (router) => {
         : (u.uptime || bytesOut > 0 ? '(caché)' : '---');
 
       return {
-        id: u['.id'],
+        id: u['.id'] || u.id || u.name,
         username: u.name,
         password: password,
         profileId: u.profile,
-        profileName: u.profile,
+        profileName: profile.name || u.profile || 'Default',
         price: profile.price || 0,
         timeLimit: u['limit-uptime'] || profile.timeLimit || 'Illimité',
         dataLimit: u['limit-bytes-total'] 
@@ -373,18 +377,21 @@ export const getMikhmonSales = async (router) => {
 
     // Filter scripts created by Mikhmon
     return scripts
-      .filter(s => s.comment === 'mikhmon' && s.name.includes('-|-'))
+      .filter(s => s.comment === 'mikhmon' && s.name && s.name.includes('-|-'))
       .map(s => {
         const parts = s.name.split('-|-');
         // Format: date-|-time-|-user-|-price-|-address-|-mac-|-validity-|-profile-|-comment
         return {
-          id: s['.id'],
+          id: s['.id'] || s.id,
           dateRaw: parts[0],
           price: parseInt(parts[3]) || 0,
-          user: parts[2],
+          user: parts[2] || '',
+          address: parts[4] || '',
+          macAddress: parts[5] || '',
+          validity: parts[6] || '',
           profile: parts[7] || '',
-          // Use the source (which is usually the date in Mikhmon) or the name date part
-          date: s.source || parts[0]
+          // Include time with date for accurate hourly stats
+          date: s.source || (parts[0] + (parts[1] ? ' ' + parts[1] : ''))
         };
       });
   } catch (err) {
