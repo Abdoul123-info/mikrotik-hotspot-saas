@@ -1,9 +1,18 @@
 import React from 'react';
-import { Share2, Printer, Copy, Check, QrCode, ShieldOff, ShieldCheck } from 'lucide-react';
+import { Share2, Printer, Copy, Check, QrCode, ShieldOff, ShieldCheck, Trash2, CheckSquare, Square } from 'lucide-react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { formatCurrency } from '../../utils/currency';
 
-function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
+function VoucherCard({ 
+  voucher, 
+  onPrint, 
+  onShare, 
+  onUnblock, 
+  onDelete, 
+  isSelectionMode = false, 
+  isSelected = false, 
+  onToggleSelect 
+}) {
   const { settings } = useSettings();
   const [copied, setCopied] = React.useState(false);
 
@@ -14,10 +23,28 @@ function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
   };
 
   return (
-    <div className={`glass-card p-5 relative group overflow-hidden transition-all 
-      ${voucher.status === 'used' ? 'opacity-50 grayscale' : ''} 
+    <div 
+      onClick={isSelectionMode ? () => onToggleSelect && onToggleSelect(voucher) : undefined}
+      className={`glass-card p-5 relative group overflow-hidden transition-all cursor-pointer ${
+        isSelectionMode ? (isSelected ? 'ring-2 ring-primary border-primary bg-primary/[0.04]' : 'hover:border-white/30') : ''
+      } ${voucher.status === 'used' ? 'opacity-60 grayscale-[40%]' : ''} 
       ${voucher.disabled ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-primary/10 hover:border-primary/30'}
     `}>
+      {/* Selection Checkbox Badge */}
+      {isSelectionMode && (
+        <div className="absolute top-3 left-3 z-20">
+          {isSelected ? (
+            <div className="w-6 h-6 rounded-lg bg-primary text-black flex items-center justify-center shadow-lg shadow-primary/30 animate-in zoom-in-50">
+              <Check size={16} className="stroke-[3]" />
+            </div>
+          ) : (
+            <div className="w-6 h-6 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center hover:bg-white/20 transition-all">
+              <div className="w-2 h-2 rounded-sm bg-white/30" />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Online Badge */}
       {voucher.status === 'online' && (
         <div className="absolute top-3 right-3 px-2 py-0.5 bg-primary/20 border border-primary/30 rounded-full flex items-center gap-1 text-[8px] font-black uppercase text-primary animate-pulse z-10">
@@ -37,7 +64,7 @@ function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
       {/* Decorative background elements */}
       <div className="absolute -right-6 -top-6 w-20 h-20 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-all" />
       
-      <div className="flex justify-between items-start mb-4">
+      <div className={`flex justify-between items-start mb-4 ${isSelectionMode ? 'pl-8' : ''}`}>
         <div>
           <h4 className="text-lg font-heading font-extrabold text-primary">{voucher.profileName}</h4>
           <p className="text-[10px] text-white/40 uppercase tracking-widest">{voucher.timeLimit} • {voucher.dataLimit}</p>
@@ -91,7 +118,7 @@ function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2" onClick={e => e.stopPropagation()}>
         <button 
           onClick={handleCopy}
           className="flex-1 h-10 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/60 hover:text-white"
@@ -120,6 +147,15 @@ function VoucherCard({ voucher, onPrint, onShare, onUnblock }) {
             title="Débloquer le ticket"
           >
             <ShieldCheck size={18} />
+          </button>
+        )}
+        {onDelete && (
+          <button 
+            onClick={() => onDelete(voucher)}
+            className="flex-1 h-10 flex items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all text-red-400 hover:text-red-300"
+            title="Supprimer ce coupon"
+          >
+            <Trash2 size={16} />
           </button>
         )}
       </div>

@@ -10,12 +10,22 @@ import {
   RefreshCw,
   Layers,
   ShieldOff,
-  ShieldCheck
+  ShieldCheck,
+  Trash2,
+  FileText,
+  CheckSquare,
+  AlertOctagon,
+  X
 } from 'lucide-react';
 import VoucherCard from '../components/coupons/VoucherCard';
 import { useSettings } from '../contexts/SettingsContext';
 import { useRouter } from '../contexts/RouterContext';
-import { getHotspotUsers, blockHotspotUser } from '../api/mikrotik.real';
+import { 
+  getHotspotUsers, 
+  blockHotspotUser,
+  deleteHotspotUser,
+  deleteHotspotUsersBatch
+} from '../api/mikrotik.real';
 import { formatCurrency } from '../utils/currency';
 import { parseTicketDate } from '../utils/sales';
 
@@ -31,6 +41,14 @@ function TicketsPage() {
   const [displayLimit, setDisplayLimit] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // Selection & Bulk Operations State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedUsernames, setSelectedUsernames] = useState(new Set());
+  const [voucherToDelete, setVoucherToDelete] = useState(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Print Settings
   const [printingVouchers, setPrintingVouchers] = useState([]);
@@ -63,6 +81,15 @@ function TicketsPage() {
             else setTicketStyle('classic');
             
             setIsPrinting(true);
+            
+            if (params.get('pdf') === 'true') {
+              setTimeout(() => {
+                const originalTitle = document.title;
+                document.title = `Tickets_${(settings?.appName || 'Hotspot').replace(/\s+/g, '_')}_${batch.code || 'Batch'}`;
+                window.print();
+                setTimeout(() => { document.title = originalTitle; }, 1000);
+              }, 400);
+            }
             
             // Clean url search params without reload
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -150,6 +177,72 @@ function TicketsPage() {
     }
   };
 
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const toggleSelectVoucher = (voucher) => {
+    setSelectedUsernames(prev => {
+      const next = new Set(prev);
+      if (next.has(voucher.username)) {
+        next.delete(voucher.username);
+      } else {
+        next.add(voucher.username);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedUsernames(new Set(filteredVouchers.map(v => v.username)));
+  };
+
+  const deselectAll = () => {
+    setSelectedUsernames(new Set());
+  };
+
+  const handleConfirmDeleteSingle = async () => {
+    if (!activeRouter || !voucherToDelete) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteHotspotUser(activeRouter, voucherToDelete.username, voucherToDelete.id);
+      if (res.success) {
+        setVouchers(prev => prev.filter(v => v.username !== voucherToDelete.username && v.id !== voucherToDelete.id));
+        showToast(`Coupon ${voucherToDelete.username} supprimé avec succès.`);
+        setVoucherToDelete(null);
+      } else {
+        showToast(res.error || 'Erreur lors de la suppression', 'error');
+      }
+    } catch (err) {
+      showToast('Erreur: ' + err.message, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmDeleteBulk = async () => {
+    if (!activeRouter || selectedUsernames.size === 0) return;
+    setIsDeleting(true);
+    const vouchersToDelete = vouchers.filter(v => selectedUsernames.has(v.username));
+    try {
+      const res = await deleteHotspotUsersBatch(activeRouter, vouchersToDelete);
+      if (res.success) {
+        setVouchers(prev => prev.filter(v => !selectedUsernames.has(v.username)));
+        showToast(`${res.deletedCount || vouchersToDelete.length} coupon(s) supprimé(s) avec succès.`);
+        setSelectedUsernames(new Set());
+        setShowBulkDeleteModal(false);
+        setIsSelectionMode(false);
+      } else {
+        showToast(res.error || 'Erreur lors de la suppression', 'error');
+      }
+    } catch (err) {
+      showToast('Erreur: ' + err.message, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Build unique profile list with counts (sorted by count descending)
   const profileCounts = vouchers.reduce((acc, v) => {
     const p = v.profileName || v.profileId || 'Inconnu';
@@ -190,12 +283,24 @@ function TicketsPage() {
               <h3 className="text-lg font-heading font-black text-gray-900 dark:text-white uppercase tracking-tight">Configuration de l'Impression</h3>
               <p className="text-gray-500 dark:text-white/40 text-xs">Personnalisez le format et le modèle de vos tickets avant d'imprimer.</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button 
                 onClick={() => setIsPrinting(false)} 
                 className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-gray-800 dark:text-white rounded-xl font-bold flex items-center gap-2 text-xs uppercase tracking-wider transition-all"
               >
                 <ChevronLeft size={16} /> Retour
+              </button>
+              <button 
+                onClick={() => {
+                  const originalTitle = document.title;
+                  document.title = `Tickets_${printWifiName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}`;
+                  window.print();
+                  setTimeout(() => { document.title = originalTitle; }, 1000);
+                }} 
+                className="px-5 py-2.5 bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 rounded-xl font-black flex items-center gap-2 text-xs uppercase tracking-wider transition-all"
+                title="Dans la fenêtre d'impression, choisissez 'Enregistrer au format PDF'"
+              >
+                <FileText size={16} /> Enregistrer en PDF
               </button>
               <button 
                 onClick={() => window.print()} 
@@ -419,7 +524,21 @@ function TicketsPage() {
           <h1 className="text-3xl font-heading font-extrabold text-white">Tickets &amp; Historique</h1>
           <p className="text-white/40 font-body">Consultez, imprimez ou partagez vos coupons déjà générés.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => {
+              setIsSelectionMode(!isSelectionMode);
+              if (isSelectionMode) setSelectedUsernames(new Set());
+            }}
+            className={`h-12 px-4 rounded-xl border flex items-center gap-2 text-xs font-bold uppercase transition-all ${
+              isSelectionMode 
+                ? 'bg-primary text-black border-primary shadow-lg shadow-primary/20 font-black' 
+                : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <CheckSquare size={16} />
+            <span>{isSelectionMode ? 'Quitter Sélection' : 'Sélectionner'}</span>
+          </button>
           <button
             onClick={fetchTickets}
             title="Actualiser"
@@ -438,7 +557,7 @@ function TicketsPage() {
             className="btn-primary flex items-center gap-2 w-fit h-12 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Printer size={18} />
-            <span className="hidden sm:inline">Tout Imprimer</span>
+            <span className="hidden sm:inline">Tout Imprimer / PDF</span>
           </button>
         </div>
       </header>
@@ -580,6 +699,10 @@ function TicketsPage() {
               onPrint={handlePrint} 
               onShare={handleShare}
               onUnblock={handleUnblock}
+              onDelete={(voucher) => setVoucherToDelete(voucher)}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedUsernames.has(v.username)}
+              onToggleSelect={toggleSelectVoucher}
             />
           ))
         )}
@@ -613,6 +736,180 @@ function TicketsPage() {
           </div>
         )}
       </div>
+
+      {/* Floating Selection Bar */}
+      {isSelectionMode && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4 animate-in slide-in-from-bottom-6 duration-300">
+          <div className="glass-card p-4 border-primary/30 shadow-2xl flex items-center justify-between gap-3 bg-[#07090D]/95 backdrop-blur-2xl">
+            <div className="flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-primary/20 text-primary border border-primary/30 flex items-center justify-center font-bold text-xs">
+                {selectedUsernames.size}
+              </span>
+              <span className="text-xs font-bold text-white uppercase tracking-wider hidden sm:inline">
+                sélectionné(s)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedUsernames.size === filteredVouchers.length && filteredVouchers.length > 0 ? (
+                <button
+                  onClick={deselectAll}
+                  className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-white/60 hover:text-white transition-all"
+                >
+                  Tout décocher
+                </button>
+              ) : (
+                <button
+                  onClick={selectAllFiltered}
+                  className="px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold text-white/60 hover:text-white transition-all"
+                >
+                  Tout cocher ({filteredVouchers.length})
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  const selectedList = vouchers.filter(v => selectedUsernames.has(v.username));
+                  setPrintingVouchers(selectedList);
+                  setPrintLayout('grid');
+                  setIsPrinting(true);
+                }}
+                disabled={selectedUsernames.size === 0}
+                className="px-3 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-xs font-bold text-white flex items-center gap-1.5 transition-all"
+                title="Imprimer ou enregistrer en PDF"
+              >
+                <Printer size={14} />
+                <span className="hidden md:inline">Imprimer / PDF</span>
+              </button>
+
+              <button
+                onClick={() => setShowBulkDeleteModal(true)}
+                disabled={selectedUsernames.size === 0}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-red-500/20 transition-all"
+              >
+                <Trash2 size={14} />
+                <span>Supprimer ({selectedUsernames.size})</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsSelectionMode(false);
+                  setSelectedUsernames(new Set());
+                }}
+                className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-all"
+                title="Fermer la sélection"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmation Suppression Unique */}
+      {voucherToDelete && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="glass-card max-w-sm w-full p-6 border-red-500/30 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-heading font-black text-white uppercase tracking-tight">Supprimer le coupon ?</h3>
+                <p className="text-xs text-white/40">Action irréversible</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Identifiant</span>
+                <span className="text-primary font-mono font-bold text-sm">{voucherToDelete.username}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Profil</span>
+                <span className="text-white font-bold">{voucherToDelete.profileName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Prix</span>
+                <span className="text-white font-mono font-bold">{formatCurrency(voucherToDelete.price, settings)}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-red-300/80 bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl leading-relaxed">
+              Ce coupon ne pourra plus être utilisé pour se connecter au réseau.
+            </p>
+
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setVoucherToDelete(null)}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 px-3 rounded-xl border border-white/10 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSingle}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-1.5"
+              >
+                {isDeleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {isDeleting ? 'En cours...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmation Suppression Groupée */}
+      {showBulkDeleteModal && selectedUsernames.size > 0 && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="glass-card max-w-md w-full p-6 border-red-500/30 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <AlertOctagon size={28} />
+              </div>
+              <div>
+                <h3 className="text-lg font-heading font-black text-white uppercase tracking-tight">Supprimer la sélection ?</h3>
+                <p className="text-xs text-white/40">Action groupée irréversible</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-red-300/80 bg-red-500/10 border border-red-500/20 p-3 rounded-xl leading-relaxed">
+              ⚠️ Vous êtes sur le point de supprimer définitivement <strong className="text-white font-black">{selectedUsernames.size} coupon(s)</strong> de votre routeur MikroTik ({activeRouter?.name}).
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBulkDeleteModal(false)}
+                disabled={isDeleting}
+                className="flex-1 py-3 px-4 rounded-xl border border-white/10 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteBulk}
+                disabled={isDeleting}
+                className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                {isDeleting ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {isDeleting ? 'Suppression...' : `Supprimer (${selectedUsernames.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Feedback */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[350] px-4 py-3 rounded-xl bg-[#0A0C10] border border-primary/30 text-white text-xs font-bold shadow-2xl flex items-center gap-2 animate-in slide-in-from-bottom-4">
+          <div className="w-2 h-2 rounded-full bg-primary" />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,12 +4,13 @@ import {
   Server, Shield, Timer, Database, MessageSquare,
   LayoutGrid, List, CheckCircle2, AlertTriangle,
   Printer, QrCode, FileDown, Activity, ChevronRight,
-  Zap, Info
+  Zap, Info, Trash2, FileText, AlertOctagon
 } from 'lucide-react';
 import { 
   getVoucherProfiles, 
   generateVouchers, 
-  getHotspotServers 
+  getHotspotServers,
+  deleteHotspotUsersBatch
 } from '../api/mikrotik.real';
 import { useSettings } from '../contexts/SettingsContext';
 import { useRouter } from '../contexts/RouterContext';
@@ -57,6 +58,9 @@ function CouponsPage() {
     const saved = localStorage.getItem('last_batch_info');
     return saved ? JSON.parse(saved) : null;
   });
+
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -141,6 +145,26 @@ function CouponsPage() {
       showToast('Erreur de génération: ' + err.message, 'error');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteBatch = async () => {
+    if (!activeRouter || !lastBatch || !lastBatch.vouchers) return;
+    setIsDeletingBatch(true);
+    try {
+      const res = await deleteHotspotUsersBatch(activeRouter, lastBatch.vouchers);
+      if (res.success) {
+        setLastBatch(null);
+        localStorage.removeItem('last_batch_info');
+        showToast('Lot de coupons supprimé avec succès du routeur !');
+        setShowDeleteModal(false);
+      } else {
+        showToast(res.error || 'Erreur lors de la suppression', 'error');
+      }
+    } catch (err) {
+      showToast('Erreur: ' + err.message, 'error');
+    } finally {
+      setIsDeletingBatch(false);
     }
   };
 
@@ -448,16 +472,23 @@ function CouponsPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => navigate('/tickets?print-last-batch=true')}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
                   >
-                    <Printer size={20} className="text-white/40 group-hover:text-primary" />
+                    <Printer size={18} className="text-white/40 group-hover:text-primary" />
                     <span className="text-[9px] font-bold uppercase text-white/30">Imprimer</span>
                   </button>
                   <button 
-                    onClick={() => navigate('/tickets?print-last-batch=true&style=qr')}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                    onClick={() => navigate('/tickets?print-last-batch=true&pdf=true')}
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all group"
                   >
-                    <QrCode size={20} className="text-white/40 group-hover:text-secondary" />
+                    <FileText size={18} className="text-primary group-hover:scale-110 transition-transform" />
+                    <span className="text-[9px] font-black uppercase text-primary">Format PDF</span>
+                  </button>
+                  <button 
+                    onClick={() => navigate('/tickets?print-last-batch=true&style=qr')}
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
+                    <QrCode size={18} className="text-white/40 group-hover:text-secondary" />
                     <span className="text-[9px] font-bold uppercase text-white/30">QR Codes</span>
                   </button>
                   <button 
@@ -474,17 +505,24 @@ function CouponsPage() {
                         document.body.removeChild(link);
                       }
                     }}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
                   >
-                    <FileDown size={20} className="text-white/40 group-hover:text-accent" />
-                    <span className="text-[9px] font-bold uppercase text-white/30">Exporter CSV</span>
+                    <FileDown size={18} className="text-white/40 group-hover:text-accent" />
+                    <span className="text-[9px] font-bold uppercase text-white/30">CSV</span>
                   </button>
                   <button 
                     onClick={() => navigate('/tickets')}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
                   >
-                    <ChevronRight size={20} className="text-white/40 group-hover:text-white" />
+                    <ChevronRight size={18} className="text-white/40 group-hover:text-white" />
                     <span className="text-[9px] font-bold uppercase text-white/30">Voir Liste</span>
+                  </button>
+                  <button 
+                    onClick={() => setShowDeleteModal(true)}
+                    className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all group"
+                  >
+                    <Trash2 size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
+                    <span className="text-[9px] font-black uppercase text-red-400">Supprimer</span>
                   </button>
                 </div>
               </div>
@@ -507,6 +545,65 @@ function CouponsPage() {
           </div>
         </div>
       </div>
+      {/* Modal Confirmation Suppression Lot */}
+      {showDeleteModal && lastBatch && (
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="glass-card max-w-md w-full p-6 border-red-500/30 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <AlertOctagon size={28} />
+              </div>
+              <div>
+                <h3 className="text-lg font-heading font-black text-white uppercase tracking-tight">Supprimer ce lot ?</h3>
+                <p className="text-xs text-white/40">Action irréversible sur votre routeur</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Code Batch</span>
+                <span className="text-primary font-mono font-bold">#{lastBatch.code}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Profil</span>
+                <span className="text-white font-bold">{lastBatch.profileName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Nombre de tickets</span>
+                <span className="text-white font-bold">{lastBatch.count} coupons</span>
+              </div>
+              <div className="flex justify-between border-t border-white/5 pt-2">
+                <span className="text-white/40 uppercase font-bold text-[10px]">Valeur totale</span>
+                <span className="text-primary font-mono font-bold">{formatCurrency(lastBatch.totalPrice, settings)}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-red-300/80 bg-red-500/10 border border-red-500/20 p-3 rounded-xl leading-relaxed">
+              ⚠️ Ces {lastBatch.count} coupons seront immédiatement et définitivement supprimés de votre routeur MikroTik ({activeRouter?.name}).
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingBatch}
+                className="flex-1 py-3 px-4 rounded-xl border border-white/10 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteBatch}
+                disabled={isDeletingBatch}
+                className="flex-1 py-3 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                {isDeletingBatch ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {isDeletingBatch ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

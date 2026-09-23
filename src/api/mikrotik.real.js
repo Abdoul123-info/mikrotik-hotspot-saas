@@ -630,3 +630,114 @@ export const deleteHotspotProfile = async (router, id) => {
     return { success: false, error: err.message };
   }
 };
+
+/**
+ * Deletes a single hotspot user/coupon by username or id.
+ */
+export const deleteHotspotUser = async (router, username, id = null) => {
+  if (!router || !router.id) throw new Error('Routeur non sélectionné.');
+
+  try {
+    const res = await fetch(`${API_URL}/mikrotik/delete-users`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        routerId: router.id,
+        usernames: username ? [username] : [],
+        ids: id ? [id] : []
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression');
+
+    // Clean local cache for this router
+    try {
+      const historyKey = `hspot_history_${router.id}`;
+      const history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+      const updatedHistory = history.filter(v => v.username !== username && v.id !== id);
+      localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
+    } catch (_) {}
+
+    // Clean last_batch_info if it contains this voucher
+    try {
+      const lastBatch = JSON.parse(localStorage.getItem('last_batch_info') || 'null');
+      if (lastBatch && Array.isArray(lastBatch.vouchers)) {
+        const filtered = lastBatch.vouchers.filter(v => v.username !== username && v.id !== id);
+        if (filtered.length === 0) {
+          localStorage.removeItem('last_batch_info');
+        } else {
+          lastBatch.vouchers = filtered;
+          lastBatch.count = filtered.length;
+          lastBatch.totalPrice = (lastBatch.price || 0) * filtered.length;
+          localStorage.setItem('last_batch_info', JSON.stringify(lastBatch));
+        }
+      }
+    } catch (_) {}
+
+    return { success: true, ...data };
+  } catch (err) {
+    console.error('deleteHotspotUser failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Deletes multiple hotspot users/coupons in bulk.
+ */
+export const deleteHotspotUsersBatch = async (router, vouchers) => {
+  if (!router || !router.id) throw new Error('Routeur non sélectionné.');
+  if (!vouchers || vouchers.length === 0) return { success: true, deletedCount: 0 };
+
+  const usernames = vouchers.map(v => v.username || v.name).filter(Boolean);
+  const ids = vouchers.map(v => v.id || v['.id']).filter(Boolean);
+
+  try {
+    const res = await fetch(`${API_URL}/mikrotik/delete-users`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        routerId: router.id,
+        usernames,
+        ids
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur lors de la suppression');
+
+    // Clean local cache for this router
+    try {
+      const historyKey = `hspot_history_${router.id}`;
+      const history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+      const usernameSet = new Set(usernames.map(u => String(u).toLowerCase()));
+      const idSet = new Set(ids);
+      const updatedHistory = history.filter(v => !usernameSet.has(String(v.username).toLowerCase()) && !idSet.has(v.id));
+      localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
+    } catch (_) {}
+
+    // Clean last_batch_info if matching
+    try {
+      const lastBatch = JSON.parse(localStorage.getItem('last_batch_info') || 'null');
+      if (lastBatch && Array.isArray(lastBatch.vouchers)) {
+        const usernameSet = new Set(usernames.map(u => String(u).toLowerCase()));
+        const idSet = new Set(ids);
+        const remaining = lastBatch.vouchers.filter(v => !usernameSet.has(String(v.username).toLowerCase()) && !idSet.has(v.id));
+        if (remaining.length === 0) {
+          localStorage.removeItem('last_batch_info');
+        } else {
+          lastBatch.vouchers = remaining;
+          lastBatch.count = remaining.length;
+          lastBatch.totalPrice = (lastBatch.price || 0) * remaining.length;
+          localStorage.setItem('last_batch_info', JSON.stringify(lastBatch));
+        }
+      }
+    } catch (_) {}
+
+    return { success: true, ...data };
+  } catch (err) {
+    console.error('deleteHotspotUsersBatch failed:', err);
+    return { success: false, error: err.message };
+  }
+};
+

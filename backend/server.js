@@ -114,16 +114,23 @@ const endpointToCommand = (endpoint, method, data) => {
 
   const path = '/' + parts.join('/');
   let cmd = '';
-  if (method === 'GET' || !method) cmd = `${path}/print`;
+  if (path.endsWith('/print') || path.endsWith('/add') || path.endsWith('/remove') || path.endsWith('/set')) {
+    cmd = path;
+  } else if (method === 'GET' || !method) cmd = `${path}/print`;
   else if (method === 'PUT') cmd = `${path}/add`;
   else if (method === 'DELETE') cmd = `${path}/remove`;
   else if (method === 'PATCH') cmd = `${path}/set`;
   else cmd = `${path}/print`;
 
-  const params = data ? Object.entries(data).map(([k, v]) => {
+  const cleanData = data ? { ...data } : {};
+  if (cmd.endsWith('/remove') && cleanData['.id'] && !cleanData.numbers) {
+    cleanData.numbers = cleanData['.id'];
+  }
+
+  const params = Object.entries(cleanData).map(([k, v]) => {
     if (k.startsWith('?') || k.startsWith('&') || k.startsWith('#')) return `${k}=${v}`;
     return `=${k}=${v}`;
-  }) : [];
+  });
   
   return { cmd, params };
 };
@@ -546,6 +553,147 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
       error: errMsg,
       tip: "Vérifiez l'adresse IP ou activez le script Agent MikroTik pour les connexions CGNAT."
     });
+  }
+});
+
+// Bulk or Single Delete Hotspot Users / Coupons
+app.post('/api/mikrotik/delete-users', requireAuth, async (req, res) => {
+  const { routerId, usernames, ids } = req.body;
+
+  if (!routerId) return res.status(400).json({ error: 'routerId manquant.' });
+  if ((!usernames || !usernames.length) && (!ids || !ids.length)) {
+    return res.status(400).json({ error: 'Aucun coupon spécifié pour la suppression.' });
+  }
+
+  try {
+    const routerDoc = await adminDb.collection('routers').doc(routerId).get();
+    if (!routerDoc.exists) return res.status(404).json({ error: 'Routeur introuvable.' });
+
+    const router = routerDoc.data();
+    if (router.ownerId !== req.user.userId) {
+      return res.status(403).json({ error: 'Accès refusé à ce routeur.' });
+    }
+
+    const apiPort = parseInt(router.port) || 8728;
+    const candidateHosts = [];
+    if (router.ztIp) candidateHosts.push({ ip: router.ztIp, label: 'ZeroTier' });
+    if (router.ip && (!router.ztIp || router.ip !== router.ztIp)) {
+      const isZt = router.ip.startsWith('10.') || router.ip.startsWith('172.');
+      candidateHosts.push({ ip: router.ip, label: isZt ? 'ZeroTier' : 'Local' });
+    }
+    if (candidateHosts.length === 0 && router.host) {
+      candidateHosts.push({ ip: router.host, label: 'Host' });
+    }
+
+    let conn = null;
+    let lastConnError = null;
+    const probeTimeout = router.agentKey ? 3500 : 15000;
+
+    for (const cand of candidateHosts) {
+      try {
+        conn = await getConnection(cand.ip, router.login, router.password, apiPort, probeTimeout);
+        break;
+      } catch (err) {
+        lastConnError = err;
+      }
+    }
+
+    const targetUsernames = Array.isArray(usernames) ? usernames.filter(Boolean) : [];
+    const targetIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+    const usernameSet = new Set(targetUsernames.map(u => String(u).toLowerCase()));
+
+    let deletedCount = 0;
+
+    if (conn) {
+      try {
+        let userRecords = [];
+        try {
+          userRecords = await conn.write('/ip/hotspot/user/print', ['=.proplist=.id,name']);
+        } catch (e) {
+          console.warn('Could not print hotspot users for removal:', e.message);
+        }
+
+        const idsToRemove = new Set(targetIds);
+        if (Array.isArray(userRecords)) {
+          userRecords.forEach(u => {
+            const uName = (u.name || '').toLowerCase();
+            if (usernameSet.has(uName)) {
+              if (u['.id']) idsToRemove.add(u['.id']);
+            }
+          });
+        }
+
+        if (idsToRemove.size > 0) {
+          const idList = Array.from(idsToRemove);
+          for (let i = 0; i < idList.length; i += 50) {
+            const chunk = idList.slice(i, i + 50);
+            try {
+              await conn.write('/ip/hotspot/user/remove', [`=numbers=${chunk.join(',')}`]);
+              deletedCount += chunk.length;
+            } catch (removeErr) {
+              console.warn('Batch remove chunk failed, removing individually:', removeErr.message);
+              for (const singleId of chunk) {
+                try {
+                  await conn.write('/ip/hotspot/user/remove', [`=numbers=${singleId}`]);
+                  deletedCount++;
+                } catch (_) {}
+              }
+            }
+          }
+        }
+
+        // Clean up active sessions
+        try {
+          const activeSessions = await conn.write('/ip/hotspot/active/print', ['=.proplist=.id,user']);
+          if (Array.isArray(activeSessions)) {
+            const activeToRemove = activeSessions
+              .filter(a => usernameSet.has((a.user || '').toLowerCase()))
+              .map(a => a['.id'])
+              .filter(Boolean);
+            if (activeToRemove.length > 0) {
+              await conn.write('/ip/hotspot/active/remove', [`=numbers=${activeToRemove.join(',')}`]);
+            }
+          }
+        } catch (_) {}
+
+        responseCache.clear();
+      } catch (err) {
+        console.error('Direct deletion error:', err);
+      }
+    } else if (router.agentKey) {
+      // Offline / Push Agent fallback
+      for (const uname of targetUsernames) {
+        await adminDb.collection('routers').doc(routerId).collection('commands').add({
+          endpoint: '/ip/hotspot/user/remove',
+          method: 'POST',
+          data: { name: uname },
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        });
+        deletedCount++;
+      }
+
+      if (router.agentData && Array.isArray(router.agentData.hotspotUsers)) {
+        const remainingUsers = router.agentData.hotspotUsers.filter(u => {
+          const uName = (u.name || u.user || '').toLowerCase();
+          return !usernameSet.has(uName);
+        });
+        await adminDb.collection('routers').doc(routerId).update({
+          'agentData.hotspotUsers': remainingUsers
+        });
+      }
+    } else {
+      throw lastConnError || new Error(`Routeur injoignable.`);
+    }
+
+    return res.status(200).json({
+      success: true,
+      deletedCount: deletedCount || targetUsernames.length || targetIds.length,
+      message: `${deletedCount || targetUsernames.length} coupon(s) supprimé(s) avec succès.`
+    });
+  } catch (error) {
+    console.error('Delete users error:', error);
+    res.status(500).json({ error: error.message || 'Échec de la suppression des coupons.' });
   }
 });
 
