@@ -79,7 +79,8 @@ function SalesPage() {
   }, [activeRouter?.id, fetchSales]);
 
   const now = new Date();
-  const [viewMode, setViewMode] = useState('month'); // 'day' | 'month' | 'year'
+  const [viewMode, setViewMode] = useState('day'); // 'day' | 'month' | 'year' (Défaut sur Aujourd'hui)
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' = chronologique (00h -> 08h -> 09h -> 10h)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-indexed
   const [selectedDay, setSelectedDay] = useState(now.getDate());
@@ -205,7 +206,7 @@ function SalesPage() {
   }, [filteredTickets, viewMode, selectedYear, selectedMonth]);
 
   // Pre-sorted table data with cumulative totals (memoized)
-  // Trié par ordre antéchronologique (les ventes les plus récentes en haut)
+  // Trié par ordre chronologique croissant par défaut (00h -> 08h -> 09h -> 10h...)
   const sortedTableData = useMemo(() => {
     const sorted = filteredTickets
       .slice()
@@ -219,13 +220,16 @@ function SalesPage() {
         }
         return { ...t, _parsed: d };
       })
-      .sort((a, b) => (b._parsed || 0) - (a._parsed || 0));
+      .sort((a, b) => {
+        const diff = (a._parsed || 0) - (b._parsed || 0);
+        return sortOrder === 'asc' ? diff : -diff;
+      });
     let cumul = 0;
     return sorted.map(t => {
       cumul += parseInt(t.price) || 0;
       return { ...t, cumul };
     });
-  }, [filteredTickets]);
+  }, [filteredTickets, sortOrder]);
 
   // ── Nav helpers ────────────────────────────────────────────────────────────
   const prevPeriod = () => {
@@ -532,7 +536,18 @@ function SalesPage() {
                 <th className="px-6 py-4">Adresse IP</th>
                 <th className="px-6 py-4">MAC</th>
                 <th className="px-6 py-4">Profil</th>
-                <th className="px-6 py-4 text-center">{viewMode === 'day' ? 'Heure' : 'Date & Heure'}</th>
+                <th 
+                  onClick={() => setSortOrder(o => o === 'asc' ? 'desc' : 'asc')}
+                  className="px-6 py-4 text-center cursor-pointer select-none hover:text-primary transition-colors"
+                  title="Cliquez pour changer l'ordre (du matin au soir ou l'inverse)"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>{viewMode === 'day' ? 'Heure' : 'Date & Heure'}</span>
+                    <span className="text-[10px] text-primary/70 font-mono">
+                      {sortOrder === 'asc' ? '▲' : '▼'}
+                    </span>
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right">Montant</th>
               </tr>
             </thead>
