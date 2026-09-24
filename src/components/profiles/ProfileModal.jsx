@@ -58,9 +58,9 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
       setForm({
         name: initialData.name || '',
         price: initialData.price || '',
-        sessionTimeout: initialData.timeLimit === 'Illimité' ? '' : initialData.timeLimit || '01:00:00',
-        uploadSpeed: initialData.uploadLimit || '2M',
-        downloadSpeed: initialData.downloadLimit || '5M',
+        sessionTimeout: initialData.sessionTimeout || (initialData.timeLimit === 'Illimité' ? '' : initialData.timeLimit) || '',
+        uploadSpeed: initialData.uploadLimit || '',
+        downloadSpeed: initialData.downloadLimit || '',
         sharedUsers: initialData.sharedUsers || 1,
         expiryMode: initialData.expiryMode || 'remove',
         idleTimeout: initialData.idleTimeout || '',

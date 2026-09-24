@@ -138,11 +138,26 @@ export const getVoucherProfiles = async (router) => {
         }
       }
       
+      const rateLimitParts = (p['rate-limit'] || '').split('/');
+      const uploadLimit = rateLimitParts[0] || '';
+      const downloadLimit = rateLimitParts[1] || rateLimitParts[0] || '';
+      const isDefault = p.name === 'default' || p.default === 'true' || p.default === true;
+
       return {
-        id: p['.id'],
+        id: p['.id'] || p.name,
         name: p.name || 'Sans nom',
         price: price,
         timeLimit: p['session-timeout'] || 'Illimité',
+        sessionTimeout: p['session-timeout'] || '',
+        idleTimeout: p['idle-timeout'] || '',
+        sharedUsers: parseInt(p['shared-users']) || 1,
+        rateLimit: p['rate-limit'] || '',
+        uploadLimit: uploadLimit,
+        downloadLimit: downloadLimit,
+        isDefault: isDefault,
+        comment: p.comment || '',
+        onLogin: p['on-login'] || '',
+        expiryMode: (p['on-login'] || '').includes('ntfc') ? 'disable' : 'remove',
         dataLimit: p['limit-bytes-total']
           ? `${Math.round(parseInt(p['limit-bytes-total']) / 1024 / 1024)} MB`
           : 'Illimité'
@@ -583,13 +598,32 @@ export const getNeighbors = async (router) => {
 export const createHotspotProfile = async (router, profileData) => {
   try {
     const payload = {
-      name: profileData.name,
-      'session-timeout': profileData.sessionTimeout || '',
-      'idle-timeout': profileData.idleTimeout || '',
-      'shared-users': profileData.sharedUsers || '1',
+      name: profileData.name.trim(),
+      'shared-users': String(profileData.sharedUsers || 1),
     };
-    if (profileData.rateLimit) payload['rate-limit'] = profileData.rateLimit;
-    if (profileData.comment) payload.comment = profileData.comment;
+
+    // Valid non-empty timeouts (RouterOS rejects empty string as session-timeout/idle-timeout)
+    if (profileData.sessionTimeout && profileData.sessionTimeout !== 'none') {
+      payload['session-timeout'] = profileData.sessionTimeout;
+    }
+    if (profileData.idleTimeout && profileData.idleTimeout !== 'none') {
+      payload['idle-timeout'] = profileData.idleTimeout;
+    }
+    if (profileData.rateLimit) {
+      payload['rate-limit'] = profileData.rateLimit;
+    }
+
+    // Embed price in comment so our app & Mikhmon tools reliably read the exact price
+    const price = parseInt(profileData.price) || 0;
+    const commentPrefix = price > 0 ? `prix:${price}` : '';
+    payload.comment = profileData.comment 
+      ? (profileData.comment.includes('prix:') ? profileData.comment : `${commentPrefix} ${profileData.comment}`.trim())
+      : commentPrefix;
+
+    // Generate Mikhmon-compatible on-login script for validity tracking & auto-expiry
+    const mode = profileData.expiryMode === 'disable' ? 'ntfc' : 'remc';
+    payload['on-login'] = `:put (",${mode},${price},${profileData.sessionTimeout || '0s'},${profileData.sharedUsers || 1},,${mode},")`;
+
     await callRouter(router, '/ip/hotspot/user/profile', 'PUT', payload);
     return { success: true };
   } catch (err) {
@@ -604,12 +638,32 @@ export const createHotspotProfile = async (router, profileData) => {
 export const updateHotspotProfile = async (router, id, profileData) => {
   try {
     const payload = { '.id': id };
-    if (profileData.name !== undefined) payload.name = profileData.name;
-    if (profileData.sessionTimeout !== undefined) payload['session-timeout'] = profileData.sessionTimeout;
-    if (profileData.idleTimeout !== undefined) payload['idle-timeout'] = profileData.idleTimeout;
-    if (profileData.sharedUsers !== undefined) payload['shared-users'] = profileData.sharedUsers;
-    if (profileData.rateLimit !== undefined) payload['rate-limit'] = profileData.rateLimit;
-    if (profileData.comment !== undefined) payload.comment = profileData.comment;
+    if (profileData.name !== undefined) payload.name = profileData.name.trim();
+    if (profileData.sharedUsers !== undefined) payload['shared-users'] = String(profileData.sharedUsers || 1);
+
+    if (profileData.sessionTimeout !== undefined) {
+      payload['session-timeout'] = profileData.sessionTimeout || 'none';
+    }
+    if (profileData.idleTimeout !== undefined) {
+      payload['idle-timeout'] = profileData.idleTimeout || 'none';
+    }
+    if (profileData.rateLimit !== undefined) {
+      payload['rate-limit'] = profileData.rateLimit;
+    }
+
+    if (profileData.price !== undefined || profileData.comment !== undefined) {
+      const price = profileData.price !== undefined ? parseInt(profileData.price) || 0 : null;
+      const commentPrefix = price !== null && price > 0 ? `prix:${price}` : '';
+      payload.comment = profileData.comment 
+        ? (profileData.comment.includes('prix:') ? profileData.comment : `${commentPrefix} ${profileData.comment}`.trim())
+        : (commentPrefix || '');
+        
+      if (price !== null) {
+        const mode = profileData.expiryMode === 'disable' ? 'ntfc' : 'remc';
+        payload['on-login'] = `:put (",${mode},${price},${profileData.sessionTimeout || '0s'},${profileData.sharedUsers || 1},,${mode},")`;
+      }
+    }
+
     await callRouter(router, '/ip/hotspot/user/profile/set', 'POST', payload);
     return { success: true };
   } catch (err) {

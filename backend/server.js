@@ -178,11 +178,12 @@ const compileToRouterOsCli = (endpoint, method, data) => {
   if (cleanEndpoint === 'ip/hotspot/user/profile' && method === 'PUT') {
     const name = data.name;
     const updates = [`name="${name}"`];
-    if (data['session-timeout'] !== undefined) updates.push(`session-timeout="${data['session-timeout']}"`);
-    if (data['idle-timeout'] !== undefined) updates.push(`idle-timeout="${data['idle-timeout']}"`);
-    if (data['shared-users'] !== undefined) updates.push(`shared-users=${data['shared-users']}`);
-    if (data['rate-limit'] !== undefined) updates.push(`rate-limit="${data['rate-limit']}"`);
-    if (data.comment !== undefined) updates.push(`comment="${data.comment}"`);
+    if (data['session-timeout'] && data['session-timeout'] !== 'none') updates.push(`session-timeout="${data['session-timeout']}"`);
+    if (data['idle-timeout'] && data['idle-timeout'] !== 'none') updates.push(`idle-timeout="${data['idle-timeout']}"`);
+    if (data['shared-users']) updates.push(`shared-users=${data['shared-users']}`);
+    if (data['rate-limit']) updates.push(`rate-limit="${data['rate-limit']}"`);
+    if (data['on-login']) updates.push(`on-login="${data['on-login']}"`);
+    if (data.comment) updates.push(`comment="${data.comment}"`);
     return `/ip hotspot user profile add ${updates.join(' ')}`;
   }
 
@@ -191,14 +192,15 @@ const compileToRouterOsCli = (endpoint, method, data) => {
     const id = data['.id'] || data.name;
     if (!id) return null;
     const updates = [];
-    if (data.name !== undefined) updates.push(`name="${data.name}"`);
-    if (data['session-timeout'] !== undefined) updates.push(`session-timeout="${data['session-timeout']}"`);
-    if (data['idle-timeout'] !== undefined) updates.push(`idle-timeout="${data['idle-timeout']}"`);
-    if (data['shared-users'] !== undefined) updates.push(`shared-users=${data['shared-users']}`);
-    if (data['rate-limit'] !== undefined) updates.push(`rate-limit="${data['rate-limit']}"`);
+    if (data.name) updates.push(`name="${data.name}"`);
+    if (data['session-timeout'] !== undefined) updates.push(`session-timeout="${data['session-timeout'] || 'none'}"`);
+    if (data['idle-timeout'] !== undefined) updates.push(`idle-timeout="${data['idle-timeout'] || 'none'}"`);
+    if (data['shared-users']) updates.push(`shared-users=${data['shared-users']}`);
+    if (data['rate-limit']) updates.push(`rate-limit="${data['rate-limit']}"`);
+    if (data['on-login']) updates.push(`on-login="${data['on-login']}"`);
     if (data.comment !== undefined) updates.push(`comment="${data.comment}"`);
     if (updates.length === 0) return null;
-    return `/ip hotspot user profile set [find where name="${id}"] ${updates.join(' ')}`;
+    return `/ip hotspot user profile set [find where name="${data.name || id}" or .id="${id}"] ${updates.join(' ')}`;
   }
 
   return null;
@@ -436,10 +438,14 @@ app.post('/api/mikrotik', requireAuth, async (req, res) => {
       }
     }
 
-    responseCache.set(cacheKey, {
+    if (!isReadOperation) {
+      responseCache.clear();
+    } else {
+      responseCache.set(cacheKey, {
         data: output,
         timestamp: Date.now()
-    });
+      });
+    }
 
     const duration = Date.now() - start;
     console.log(`✅ ${endpoint} (${Array.isArray(output) ? output.length : '1'} items) en ${duration}ms`);
