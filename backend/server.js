@@ -144,7 +144,10 @@ const compileToRouterOsCli = (endpoint, method, data) => {
     const password = data.password || '';
     const profile = data.profile || 'default';
     const comment = data.comment || '';
-    return `/ip hotspot user add name="${name}" password="${password}" profile="${profile}" comment="${comment}"`;
+    const updates = [`name="${name}"`, `password="${password}"`, `profile="${profile}"`, `comment="${comment}"`];
+    if (data['limit-uptime']) updates.push(`limit-uptime="${data['limit-uptime']}"`);
+    if (data['limit-bytes-total']) updates.push(`limit-bytes-total=${data['limit-bytes-total']}`);
+    return `/ip hotspot user add ${updates.join(' ')}`;
   }
   
   // 2. Set/Modify User (e.g. block/unblock)

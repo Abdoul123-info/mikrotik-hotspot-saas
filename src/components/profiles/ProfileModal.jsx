@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Zap, Clock, Download, Upload, Users, Shield, Timer, CircleDollarSign, Save, Loader2 } from 'lucide-react';
+import { X, Zap, Clock, Download, Upload, Users, Shield, Timer, CircleDollarSign, Save, Loader2, CalendarClock, HardDrive } from 'lucide-react';
 
 const SESSION_PRESETS = [
   { label: '30 min', value: '00:30:00' },
@@ -13,6 +13,33 @@ const SESSION_PRESETS = [
   { label: '7 jours', value: '7d 00:00:00' },
   { label: '14 jours', value: '14d 00:00:00' },
   { label: '30 jours', value: '30d 00:00:00' },
+  { label: 'Illimité', value: '' },
+];
+
+const VALIDITY_PRESETS = [
+  { label: '30 min', value: '30m' },
+  { label: '1 heure', value: '1h' },
+  { label: '3 heures', value: '3h' },
+  { label: '6 heures', value: '6h' },
+  { label: '12 heures', value: '12h' },
+  { label: '1 jour', value: '1d' },
+  { label: '2 jours', value: '2d' },
+  { label: '3 jours', value: '3d' },
+  { label: '7 jours', value: '7d' },
+  { label: '14 jours', value: '14d' },
+  { label: '30 jours', value: '30d' },
+  { label: 'Illimité', value: '' },
+];
+
+const DATA_PRESETS = [
+  { label: '100 MB', value: '100M' },
+  { label: '250 MB', value: '250M' },
+  { label: '500 MB', value: '500M' },
+  { label: '1 GB', value: '1G' },
+  { label: '2 GB', value: '2G' },
+  { label: '3 GB', value: '3G' },
+  { label: '5 GB', value: '5G' },
+  { label: '10 GB', value: '10G' },
   { label: 'Illimité', value: '' },
 ];
 
@@ -44,6 +71,8 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
     name: '',
     price: '',
     sessionTimeout: '01:00:00',
+    validity: '1d',
+    dataLimit: '',
     uploadSpeed: '2M',
     downloadSpeed: '5M',
     sharedUsers: 1,
@@ -59,6 +88,8 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
         name: initialData.name || '',
         price: initialData.price || '',
         sessionTimeout: initialData.sessionTimeout || (initialData.timeLimit === 'Illimité' ? '' : initialData.timeLimit) || '',
+        validity: initialData.validity || '',
+        dataLimit: initialData.dataLimit || '',
         uploadSpeed: initialData.uploadLimit || '',
         downloadSpeed: initialData.downloadLimit || '',
         sharedUsers: initialData.sharedUsers || 1,
@@ -68,6 +99,7 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
     } else {
       setForm({
         name: '', price: '', sessionTimeout: '01:00:00',
+        validity: '1d', dataLimit: '',
         uploadSpeed: '2M', downloadSpeed: '5M', sharedUsers: 1,
         expiryMode: 'remove', idleTimeout: '00:05:00',
       });
@@ -92,6 +124,8 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
         name: form.name.trim(),
         price: parseInt(form.price) || 0,
         sessionTimeout: form.sessionTimeout || '',
+        validity: form.validity || '',
+        dataLimit: form.dataLimit || '',
         rateLimit,
         sharedUsers: parseInt(form.sharedUsers) || 1,
         expiryMode: form.expiryMode,
@@ -185,6 +219,52 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
                   className={`px-3 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                     form.sessionTimeout === p.value
                       ? 'bg-secondary/20 border-secondary text-secondary shadow-lg shadow-secondary/10'
+                      : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2b: Validité (Calendar countdown from first login) */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-black text-white/40 tracking-widest flex items-center gap-1.5">
+              <CalendarClock size={10} className="text-accent" /> Validité <span className="text-white/20 font-normal ml-1">(durée calendaire après 1er login)</span>
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {VALIDITY_PRESETS.map(p => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, validity: p.value }))}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                    form.validity === p.value
+                      ? 'bg-accent/20 border-accent text-accent shadow-lg shadow-accent/10'
+                      : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 2c: Limite Data (Transfer quota) */}
+          <div className="space-y-2">
+            <label className="text-[10px] uppercase font-black text-white/40 tracking-widest flex items-center gap-1.5">
+              <HardDrive size={10} className="text-emerald-400" /> Limite Data <span className="text-white/20 font-normal ml-1">(quota de transfert)</span>
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-5 gap-2">
+              {DATA_PRESETS.map(p => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, dataLimit: p.value }))}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                    form.dataLimit === p.value
+                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/10'
                       : 'bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white'
                   }`}
                 >
@@ -308,11 +388,25 @@ export default function ProfileModal({ isOpen, onClose, onSave, initialData }) {
           </div>
 
           {/* Preview */}
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-2">
+          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4 space-y-3">
             <p className="text-[9px] text-white/20 uppercase font-black tracking-widest">Aperçu on-login (Mikhmon)</p>
             <code className="text-[10px] text-primary/80 font-mono block break-all">
-              {`:put (",remc,${form.price || 0},${form.sessionTimeout || '0s'},${form.sharedUsers},,${form.expiryMode === 'disable' ? 'Enable' : 'Remove'},")`}
+              {`:put (",${form.expiryMode === 'disable' ? 'ntfc' : 'remc'},${form.price || 0},${form.validity || '0s'},${form.sharedUsers},,${form.expiryMode === 'disable' ? 'ntfc' : 'remc'},${form.dataLimit || ''},")`}
             </code>
+            <div className="grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+              <div>
+                <p className="text-[8px] text-white/20 uppercase font-black">Durée Session</p>
+                <p className="text-[10px] text-secondary font-mono font-bold">{form.sessionTimeout || '∞'}</p>
+              </div>
+              <div>
+                <p className="text-[8px] text-white/20 uppercase font-black">Validité</p>
+                <p className="text-[10px] text-accent font-mono font-bold">{form.validity || '∞'}</p>
+              </div>
+              <div>
+                <p className="text-[8px] text-white/20 uppercase font-black">Quota Data</p>
+                <p className="text-[10px] text-emerald-400 font-mono font-bold">{form.dataLimit || '∞'}</p>
+              </div>
+            </div>
           </div>
 
           {/* Submit */}

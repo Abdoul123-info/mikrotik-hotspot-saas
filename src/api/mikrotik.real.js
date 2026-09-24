@@ -143,6 +143,27 @@ export const getVoucherProfiles = async (router) => {
       const downloadLimit = rateLimitParts[1] || rateLimitParts[0] || '';
       const isDefault = p.name === 'default' || p.default === 'true' || p.default === true;
 
+      // 5. Parse Mikhmon on-login string for validity and dataLimit
+      //    Format: :put (",MODE,PRICE,VALIDITY,SHARED,,MODE,DATA,")
+      let validity = '';
+      let dataLimitParsed = '';
+      if (p['on-login']) {
+        const onLoginMatch = p['on-login'].match(
+          /,\s*(remc|rem|vc|ntfc)\s*,\s*([^,\s]*)\s*,\s*([^,\s]*)\s*,\s*([^,\s]*)\s*,\s*([^,\s]*)\s*,\s*([^,\s]*)\s*,\s*([^,\s]*)\s*,/i
+        );
+        if (onLoginMatch) {
+          validity = onLoginMatch[3] || '';
+          if (validity === '0s') validity = '';
+          dataLimitParsed = onLoginMatch[7] || '';
+        }
+      }
+
+      // 6. Parse validity from comment as fallback
+      if (!validity) {
+        const validityCommentMatch = (p.comment || '').match(/validity[:=]\s*([\w]+)/i);
+        if (validityCommentMatch) validity = validityCommentMatch[1];
+      }
+
       return {
         id: p['.id'] || p.name,
         name: p.name || 'Sans nom',
@@ -150,6 +171,7 @@ export const getVoucherProfiles = async (router) => {
         timeLimit: p['session-timeout'] || 'Illimité',
         sessionTimeout: p['session-timeout'] || '',
         idleTimeout: p['idle-timeout'] || '',
+        validity: validity,
         sharedUsers: parseInt(p['shared-users']) || 1,
         rateLimit: p['rate-limit'] || '',
         uploadLimit: uploadLimit,
@@ -158,9 +180,9 @@ export const getVoucherProfiles = async (router) => {
         comment: p.comment || '',
         onLogin: p['on-login'] || '',
         expiryMode: (p['on-login'] || '').includes('ntfc') ? 'disable' : 'remove',
-        dataLimit: p['limit-bytes-total']
-          ? `${Math.round(parseInt(p['limit-bytes-total']) / 1024 / 1024)} MB`
-          : 'Illimité'
+        dataLimit: dataLimitParsed || (p['limit-bytes-total']
+          ? `${Math.round(parseInt(p['limit-bytes-total']) / 1024 / 1024)}M`
+          : ''),
       };
     });
   } catch (err) {
@@ -613,16 +635,22 @@ export const createHotspotProfile = async (router, profileData) => {
       payload['rate-limit'] = profileData.rateLimit;
     }
 
-    // Embed price in comment so our app & Mikhmon tools reliably read the exact price
+    // Embed price, validity, data in comment for readability
     const price = parseInt(profileData.price) || 0;
-    const commentPrefix = price > 0 ? `prix:${price}` : '';
-    payload.comment = profileData.comment 
-      ? (profileData.comment.includes('prix:') ? profileData.comment : `${commentPrefix} ${profileData.comment}`.trim())
-      : commentPrefix;
+    const validityStr = profileData.validity || '';
+    const dataLimitStr = profileData.dataLimit || '';
+    const commentParts = [];
+    if (price > 0) commentParts.push(`prix:${price}`);
+    if (validityStr) commentParts.push(`validity:${validityStr}`);
+    if (dataLimitStr) commentParts.push(`data:${dataLimitStr}`);
+    payload.comment = profileData.comment
+      ? (profileData.comment.match(/prix:|validity:|data:/) ? profileData.comment : `${commentParts.join(' ')} ${profileData.comment}`.trim())
+      : commentParts.join(' ');
 
-    // Generate Mikhmon-compatible on-login script for validity tracking & auto-expiry
+    // Generate Mikhmon-compatible on-login script
+    // Format: :put (",MODE,PRICE,VALIDITY,SHARED,,MODE,DATA,")
     const mode = profileData.expiryMode === 'disable' ? 'ntfc' : 'remc';
-    payload['on-login'] = `:put (",${mode},${price},${profileData.sessionTimeout || '0s'},${profileData.sharedUsers || 1},,${mode},")`;
+    payload['on-login'] = `:put (",${mode},${price},${validityStr || '0s'},${profileData.sharedUsers || 1},,${mode},${dataLimitStr},")`;
 
     await callRouter(router, '/ip/hotspot/user/profile', 'PUT', payload);
     return { success: true };
@@ -653,14 +681,19 @@ export const updateHotspotProfile = async (router, id, profileData) => {
 
     if (profileData.price !== undefined || profileData.comment !== undefined) {
       const price = profileData.price !== undefined ? parseInt(profileData.price) || 0 : null;
-      const commentPrefix = price !== null && price > 0 ? `prix:${price}` : '';
-      payload.comment = profileData.comment 
-        ? (profileData.comment.includes('prix:') ? profileData.comment : `${commentPrefix} ${profileData.comment}`.trim())
-        : (commentPrefix || '');
+      const validityStr = profileData.validity || '';
+      const dataLimitStr = profileData.dataLimit || '';
+      const commentParts = [];
+      if (price !== null && price > 0) commentParts.push(`prix:${price}`);
+      if (validityStr) commentParts.push(`validity:${validityStr}`);
+      if (dataLimitStr) commentParts.push(`data:${dataLimitStr}`);
+      payload.comment = profileData.comment
+        ? (profileData.comment.match(/prix:|validity:|data:/) ? profileData.comment : `${commentParts.join(' ')} ${profileData.comment}`.trim())
+        : (commentParts.join(' ') || '');
         
       if (price !== null) {
         const mode = profileData.expiryMode === 'disable' ? 'ntfc' : 'remc';
-        payload['on-login'] = `:put (",${mode},${price},${profileData.sessionTimeout || '0s'},${profileData.sharedUsers || 1},,${mode},")`;
+        payload['on-login'] = `:put (",${mode},${price},${validityStr || '0s'},${profileData.sharedUsers || 1},,${mode},${dataLimitStr},")`;
       }
     }
 

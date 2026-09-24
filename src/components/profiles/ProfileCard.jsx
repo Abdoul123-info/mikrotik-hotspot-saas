@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Trash2, Clock, Download, Upload, Users, Shield, CircleDollarSign, Zap, Lock } from 'lucide-react';
+import { Pencil, Trash2, Clock, Download, Upload, Users, Shield, CircleDollarSign, Zap, Lock, CalendarClock, HardDrive } from 'lucide-react';
 import { useSettings } from '../../contexts/SettingsContext';
 import { formatCurrency } from '../../utils/currency';
 
@@ -34,13 +34,27 @@ export default function ProfileCard({ profile, onEdit, onDelete, isDeleting }) {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="bg-white/[0.03] rounded-lg p-2.5 border border-white/5">
           <div className="flex items-center gap-1.5 mb-1">
             <Clock size={10} className="text-secondary" />
             <span className="text-[8px] uppercase font-black text-white/30 tracking-wider">Durée</span>
           </div>
           <p className="text-xs font-bold font-mono text-white/80">{profile.timeLimit}</p>
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-2.5 border border-white/5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <CalendarClock size={10} className="text-accent" />
+            <span className="text-[8px] uppercase font-black text-white/30 tracking-wider">Validité</span>
+          </div>
+          <p className="text-xs font-bold font-mono text-white/80">{profile.validity || '∞'}</p>
+        </div>
+        <div className="bg-white/[0.03] rounded-lg p-2.5 border border-white/5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <HardDrive size={10} className="text-emerald-400" />
+            <span className="text-[8px] uppercase font-black text-white/30 tracking-wider">Data</span>
+          </div>
+          <p className="text-xs font-bold font-mono text-white/80">{profile.dataLimit || '∞'}</p>
         </div>
         <div className="bg-white/[0.03] rounded-lg p-2.5 border border-white/5">
           <div className="flex items-center gap-1.5 mb-1">
